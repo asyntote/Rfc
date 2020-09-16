@@ -1,6 +1,6 @@
 /*
  *  Reflection Fan Controller 
- *    !V 0.1-001
+ *    !V 2.x
  *    !GPL V3
  *    
  *  gKript.org @ 09/2020 (R)
@@ -17,7 +17,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.7-015"
+#define RFC_VERSION         "1.7-038"
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
 #define __ON        1
@@ -42,7 +42,7 @@ FASTLED_USING_NAMESPACE
 
 //  ------------------------------------------------------------------- RFC DEFINES
 #define THV_ACTIVATION      55.0
-#define THV_DEACTIVATION    50.0
+#define THV_DEACTIVATION    45.0
 #define THE_ACTIVATION      40.0 
 #define THE_DEACTIVATION    35.0
 
@@ -95,9 +95,9 @@ byte delta = __OFF;
   
 #endif
 
-#define __ERROR_CHECK   __DISABLE
+#define __ERROR_CHECK   __ENABLE
 
-#define TH_AVERAGE  25
+#define TH_AVERAGE  10
 
 #define TH_VIDEO    1
 #define TH_ENVRM    2
@@ -125,18 +125,18 @@ float aTHE = 0.0;
 float mTHV = 0.0;
 float mTHE = 0.0;
 
-#define THA_MAX     40.0
+#define THA_MAX     35.0
 #define THA_MIN     25.0
 
-#define THE_MAX     60.0
+#define THE_MAX     55.0
 #define THE_MIN     30.0
 
 #define THV_MAX     60.0
 #define THV_MIN     45.0
 
 
-#define __EQUAL_LIMIT   60    //  uguali tra i vari sensori
-#define __SAME_LIMIT    250   //  stessa lettura sul singolo sensore
+#define __EQUAL_LIMIT   600    //  uguali tra i vari sensori                   600 = 5 minuto
+#define __SAME_LIMIT    1200   //  stessa lettura sul singolo sensore         1200 = 10 minuti
 
 byte equal = 0;
 byte gsame = 0;
@@ -153,15 +153,15 @@ void  SensErrorCheck( void ) {
   static float  othv = 0.0;
 
 
-  if ( otha != aTHA )
+  if ( otha == aTHA )
     asame+= 0.1;
   else
     asame = 0.0;
-  if ( othe != aTHE )
+  if ( othe == aTHE )
     esame++;
   else
     esame = 0;
-  if ( othv != aTHV )
+  if ( othv == aTHV )
     vsame++;
   else
     vsame = 0;
@@ -900,7 +900,7 @@ void LedCntr( void ) {
         _L_CNTR_OFF;
    }
 
-  if ( gsame > 100 )
+  if ( gsame > ( __SAME_LIMIT * 0.2 ) )
     _L_CNTR_INIT;
     
   _L_UPDATE;
