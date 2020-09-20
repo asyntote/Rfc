@@ -17,7 +17,8 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.7-038"
+#define RFC_VERSION         "1.7-062"
+
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
 #define __ON        1
@@ -41,7 +42,7 @@ FASTLED_USING_NAMESPACE
 #define __BOLD        if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
 
 //  ------------------------------------------------------------------- RFC DEFINES
-#define THV_ACTIVATION      55.0
+#define THV_ACTIVATION      60.0
 #define THV_DEACTIVATION    45.0
 #define THE_ACTIVATION      40.0 
 #define THE_DEACTIVATION    35.0
@@ -90,14 +91,14 @@ byte delta = __OFF;
 
 #elif ( __READING == __NEW )
 
-  #define RFC_DELAY     500
-  #define __RESOLUTION  10
+  #define RFC_DELAY     1000
+  #define __RESOLUTION  12
   
 #endif
 
 #define __ERROR_CHECK   __ENABLE
 
-#define TH_AVERAGE  10
+#define TH_AVERAGE  5
 
 #define TH_VIDEO    1
 #define TH_ENVRM    2
@@ -125,13 +126,15 @@ float aTHE = 0.0;
 float mTHV = 0.0;
 float mTHE = 0.0;
 
-#define THA_MAX     35.0
+    //  -------------------------------------------- LED REFERENCE VALUE
+
+#define THA_MAX     40.0
 #define THA_MIN     25.0
 
 #define THE_MAX     55.0
 #define THE_MIN     30.0
 
-#define THV_MAX     60.0
+#define THV_MAX     65.0
 #define THV_MIN     45.0
 
 
@@ -235,7 +238,7 @@ byte Rnu = __OFF;
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
 #define NUM_LEDS    10
-#define BRIGHTNESS  64
+#define BRIGHTNESS  48
 
 CRGB leds[NUM_LEDS];
 
@@ -283,6 +286,10 @@ CRGB leds[NUM_LEDS];
 
 #define _L_SV_OFF         leds[0].setRGB( 0, 0, 0)
 #define _L_SV_SET(a,b,c)  leds[0].setRGB( a, b, c)
+
+#define _L_PLS_ON         leds[3].setRGB( 64, 64, 0)
+#define _L_PLS_OFF        leds[3].setRGB( 0, 0, 0)
+
 
 #define _L_NV8_OFF        leds[8].setRGB( 0, 0, 0)
 #define _L_NS3_OFF        leds[3].setRGB( 0, 0, 0)
@@ -702,7 +709,7 @@ void  Thrm_controller( void ) {
         if ( MEnable == __ENABLE ) Relay_manager( __MAIN_SIDE , __ON );
         if ( OEnable == __ENABLE ) Relay_manager( __OTHR_SIDE , __ON );
       }
-      else if ( aTHV > THV_DEACTIVATION ) {
+      else if ( aTHV > ( ( THV_DEACTIVATION + THV_ACTIVATION ) / 2 ) ) {
         if ( MEnable == __ENABLE ) Relay_manager( __MAIN_SIDE , __ON );
       }
       else {
@@ -903,11 +910,17 @@ void LedCntr( void ) {
   if ( gsame > ( __SAME_LIMIT * 0.2 ) )
     _L_CNTR_INIT;
     
+  _L_PLS_ON;
+  _L_UPDATE;
+  delay( 5 );
+  _L_PLS_OFF;  
   _L_UPDATE;
 }
 
 //  ------------------------------------------------------------------- SETUP
 void setup(void) {
+
+  delay( 1000 );
 
   FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(BRIGHTNESS);
@@ -940,6 +953,7 @@ void setup(void) {
   RMainPanel.begin();
   ROtherPanel.begin();
 
+  delay( 1000 );
 
   //  ------------------------------------------------------------------- SENSORE BEGIN
   pinMode( ONE_WIRE_BUS , INPUT_PULLUP );
@@ -952,7 +966,7 @@ void setup(void) {
   Serial.print(sensors.getDeviceCount(), DEC);
   Serial.println(" devices.");
   Serial.println();
-
+  
   if ( sensors.getDeviceCount() == _NUM_SENSORS ) {
     //  ---------
     Serial.println("  Ambient thermal sensor");
@@ -969,8 +983,12 @@ void setup(void) {
     sensors.setResolution(THambnt, __RESOLUTION );
     Serial.print("    Resolution: ");
     Serial.print(sensors.getResolution(THambnt), DEC); 
-    Serial.print("bit");
+    Serial.print(" bit");
     Serial.println();
+    _L_SET( 7 , _L_0XFF , _L_0XFF , 0 );
+    _L_UPDATE;
+    delay( 500 );
+
     //  ---------
     Serial.println("  Video thermal sensor");
     Serial.print("    parasite power is: ");
@@ -986,8 +1004,12 @@ void setup(void) {
     sensors.setResolution(THvideo, __RESOLUTION );
     Serial.print("    Resolution: ");
     Serial.print(sensors.getResolution(THvideo), DEC); 
-    Serial.print("bit");
+    Serial.print(" bit");
     Serial.println();
+    _L_SET( 6 , _L_0XFF , _L_0XFF , 0 );
+    _L_UPDATE;
+    delay( 500 );
+
     //  ---------
     Serial.println("  Environment thermal sensor");
     Serial.print("    parasite power is: "); 
@@ -1003,8 +1025,13 @@ void setup(void) {
     sensors.setResolution(THenvrm, __RESOLUTION );
     Serial.print("    Resolution: ");
     Serial.print(sensors.getResolution(THvideo), DEC); 
-    Serial.print("bit");
+    Serial.print(" bit");
     Serial.println();
+    _L_SET( 5 , _L_0XFF , _L_0XFF , 0 );
+    _L_UPDATE;
+    delay( 500 );
+
+    //  ---------
     sensors.requestTemperatures();
     aTHV = sensors.getTempC( THvideo );
     aTHE = sensors.getTempC( THenvrm );
@@ -1013,6 +1040,12 @@ void setup(void) {
     Serial.println();
     Serial.print( "Sensors found lower than the need: " );
     Serial.println( sensors.getDeviceCount() );
+    for ( int i = 0 ; i < sensors.getDeviceCount() ; i++ ) {
+      _L_SET( ( 8 - i ) , _L_0XFF , _L_0XFF , 0 );
+      _L_UPDATE;
+      delay( 500 );
+    }
+    delay( 3000 );
     bigFail();
   }
 
@@ -1022,7 +1055,11 @@ void setup(void) {
   Serial.println();
   Serial.println("---------------------------------------------------");
   showHelp();
-  delay(5000);
+  _L_SET( 7 , 0 , 0 , 0 );
+  _L_SET( 6 , 0 , 0 , 0 );
+  _L_SET( 5 , 0 , 0 , 0 );
+  _L_UPDATE;
+  delay(2000);
   Serial.println( "" );
 }
 
