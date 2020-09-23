@@ -17,7 +17,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.7-062"
+#define RFC_VERSION         "1.7-065"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -43,7 +43,7 @@ FASTLED_USING_NAMESPACE
 
 //  ------------------------------------------------------------------- RFC DEFINES
 #define THV_ACTIVATION      60.0
-#define THV_DEACTIVATION    45.0
+#define THV_DEACTIVATION    50.0
 #define THE_ACTIVATION      40.0 
 #define THE_DEACTIVATION    35.0
 
@@ -91,14 +91,14 @@ byte delta = __OFF;
 
 #elif ( __READING == __NEW )
 
-  #define RFC_DELAY     1000
-  #define __RESOLUTION  12
+  #define RFC_DELAY     500
+  #define __RESOLUTION  11
   
 #endif
 
 #define __ERROR_CHECK   __ENABLE
 
-#define TH_AVERAGE  5
+#define TH_AVERAGE  55
 
 #define TH_VIDEO    1
 #define TH_ENVRM    2
@@ -456,7 +456,7 @@ void SerDebug( void ) {
       __NORMAL;
       Serial.print("    -  ");
       printStatus();
-      Serial.print("  -  ");
+/*      Serial.print("  -  ");
       Serial.print("Cmd: ");
       if ( inByte ) {
         Serial.print( (char)inByte );
@@ -473,6 +473,8 @@ void SerDebug( void ) {
       Serial.print("  -  ");
       Serial.print("ms: ");
       Serial.print( Texe );
+ */
+      Serial.print( abs( Texe - RFC_DELAY ) < 2?" OK":" NOT OK" );
     }
   }
   else if ( delta == __ON ) {
