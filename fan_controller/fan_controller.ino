@@ -17,7 +17,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.7-065"
+#define RFC_VERSION         "1.7-069"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -113,9 +113,11 @@ DeviceAddress       THambnt;
 
 int id = 0;
 
+#define             __AMB_AVERAGED        __YES
 #define             __AMB_TIME  100
 unsigned long       time_amb = __RESET;
 
+float THA_s[ TH_AVERAGE ];
 float THV_s[ TH_AVERAGE ];
 float THE_s[ TH_AVERAGE ];
 
@@ -660,14 +662,24 @@ void  Relay_manager( int ch , int st ) {
     sensors.requestTemperatures();
     THV_s[ id ] = sensors.getTempC( THvideo );
     THE_s[ id ] = sensors.getTempC( THenvrm );
-    aTHA = sensors.getTempC( THambnt );
+    #if ( __AMB_AVERAGED == __YES )
+      THA_s[ id ] = sensors.getTempC( THambnt );
+    #else
+      aTHA = sensors.getTempC( THambnt );
+    #endif      
     for( int a = 0; a < TH_AVERAGE ; a++ ) {
       aTHV += THV_s[a];
-    }
-    aTHV /= (float)TH_AVERAGE;
-    for( int a = 0; a < TH_AVERAGE ; a++ ) {
       aTHE += THE_s[a];
+      #if ( __AMB_AVERAGED == __YES )
+        aTHA += THA_s[a];
+      #endif
     }
+    #if ( __AMB_AVERAGED == __YES )
+      aTHA /= (float)TH_AVERAGE;
+    #else
+      aTHA = sensors.getTempC( THambnt );
+    #endif
+    aTHV /= (float)TH_AVERAGE;
     aTHE /= (float)TH_AVERAGE;
     if ( ++id >= TH_AVERAGE )
       id = 0;
@@ -681,6 +693,15 @@ void  Thrm_controller( void ) {
   if ( cycles < (  TH_AVERAGE + 5 ) ) {
     AutoInit = __OFF;
   } else {
+    if ( AutoInit == __OFF ) {
+       Force = 0;
+      VEnable = 0;
+      MEnable = 0;
+      OEnable = 0;
+      NEnable = 0;
+      SForce = 0;
+    }
+      
     AutoInit = __ON;
 //    _L_CNTR_INIT;
   }
@@ -737,6 +758,12 @@ void  Thrm_controller( void ) {
         Relay_manager( __NOT_USED , __OFF );
       }
     }
+  } else {
+    Force = 1;
+    Relay_manager( __VIDEO , __ON );
+    Relay_manager( __MAIN_SIDE , __ON );
+    Relay_manager( __OTHR_SIDE , __ON );
+    Relay_manager( __NOT_USED , __ON );
   }
 }
 
