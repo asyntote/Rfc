@@ -17,7 +17,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.7-069"
+#define RFC_VERSION         "1.8-042"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -42,7 +42,7 @@ FASTLED_USING_NAMESPACE
 #define __BOLD        if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
 
 //  ------------------------------------------------------------------- RFC DEFINES
-#define THV_ACTIVATION      60.0
+#define THV_ACTIVATION      40.0
 #define THV_DEACTIVATION    50.0
 #define THE_ACTIVATION      40.0 
 #define THE_DEACTIVATION    35.0
@@ -98,7 +98,10 @@ byte delta = __OFF;
 
 #define __ERROR_CHECK   __ENABLE
 
-#define TH_AVERAGE  55
+#define TH_AVERAGE  60
+#define DRV_AVERAGE 150
+
+#define DRV_TH      5
 
 #define TH_VIDEO    1
 #define TH_ENVRM    2
@@ -112,18 +115,25 @@ DeviceAddress       THenvrm;
 DeviceAddress       THambnt;
 
 int id = 0;
+int iddrv = 0;
 
 #define             __AMB_AVERAGED        __YES
 #define             __AMB_TIME  100
 unsigned long       time_amb = __RESET;
 
+int Dval = 0;
+int c_Dval = 0;
+
 float THA_s[ TH_AVERAGE ];
 float THV_s[ TH_AVERAGE ];
 float THE_s[ TH_AVERAGE ];
+float THDrv_s[ DRV_AVERAGE ];
 
 float aTHA = 0.0;
 float aTHV = 0.0;
 float aTHE = 0.0;
+float aTHDrv = 0.0;
+float oTHV = 0.0;
 
 float mTHV = 0.0;
 float mTHE = 0.0;
@@ -252,7 +262,7 @@ CRGB leds[NUM_LEDS];
 #define _LN_VV      5
 #define _LN_VM      6
 #define _LN_VO      7
-#define _LN_VNU     8
+#define _LN_DRV     8
 #define _LN_ON      9
 
 #define _L_0XFF     64
@@ -289,9 +299,12 @@ CRGB leds[NUM_LEDS];
 #define _L_SV_OFF         leds[0].setRGB( 0, 0, 0)
 #define _L_SV_SET(a,b,c)  leds[0].setRGB( a, b, c)
 
-#define _L_PLS_ON         leds[3].setRGB( 64, 64, 0)
-#define _L_PLS_OFF        leds[3].setRGB( 0, 0, 0)
+#define _L_PLS_ON         leds[4].setRGB( 0, 0, 128)
+#define _L_PLS_OFF        leds[4].setRGB( 0, 0, 0)
 
+#define _L_DRV_OFF        leds[_LN_DRV].setRGB( 0, 0, 0)
+#define _L_DRV_HOT(a)     leds[_LN_DRV].setRGB( a, 0, 0)
+#define _L_DRV_CLD(a)     leds[_LN_DRV].setRGB( 0, 0, a)
 
 #define _L_NV8_OFF        leds[8].setRGB( 0, 0, 0)
 #define _L_NS3_OFF        leds[3].setRGB( 0, 0, 0)
@@ -409,6 +422,24 @@ void  printStatus( void ) {
 }
 
 //  ------------------------------------------------------------------- CODE START
+
+void avg_reset( void ) {
+  for( int c = 0 ; c < TH_AVERAGE ; c++ )
+    THA_s[c] = 0.0;
+  for( int c = 0 ; c < TH_AVERAGE ; c++ )
+    THE_s[c] = 0.0;
+  for( int c = 0 ; c < TH_AVERAGE ; c++ )
+    THV_s[c] = 0.0;
+  for( int c = 0 ; c < DRV_AVERAGE ; c++ )
+    THDrv_s[c] = 0.0;
+
+  aTHA = 0.0;
+  aTHE = 0.0;
+  aTHV = 0.0;
+  aTHDrv = 0.0;
+}
+
+
 void bigFail( void ) {
   byte r = 0;
   _ALL_LED_OFF;
@@ -447,6 +478,15 @@ void SerDebug( void ) {
       Serial.print("/");
       __BOLD;
       Serial.print(aTHV , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print(" - Der_v: ");
+      __BOLD;
+      Serial.print( aTHDrv * 1000 , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print( "/" );
+      Serial.print( Dval );
+      Serial.print( "/" );
+      Serial.print( c_Dval );
       __NORMAL;
       Serial.print(" - Me/Mv: ");
       __BOLD;
@@ -659,6 +699,7 @@ void  Relay_manager( int ch , int st ) {
 #elif ( __READING == __NEW ) 
 
   void avg_reading( void ) {
+    oTHV = aTHV;
     sensors.requestTemperatures();
     THV_s[ id ] = sensors.getTempC( THvideo );
     THE_s[ id ] = sensors.getTempC( THenvrm );
@@ -681,8 +722,23 @@ void  Relay_manager( int ch , int st ) {
     #endif
     aTHV /= (float)TH_AVERAGE;
     aTHE /= (float)TH_AVERAGE;
+
+    if ( AutoInit == __ON ) {
+      THDrv_s[ iddrv ] = aTHV -oTHV;
+      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+        aTHDrv += THDrv_s[a];
+      }
+      aTHDrv /= (float)DRV_AVERAGE;
+    } else {
+      iddrv = 0;
+      aTHDrv = 0;
+    }
+    
     if ( ++id >= TH_AVERAGE )
       id = 0;
+    if ( ++iddrv >= DRV_AVERAGE )
+      iddrv = 0;
+      
     if ( aTHV > mTHV ) mTHV = aTHV;
     if ( aTHE > mTHE ) mTHE = aTHE;
   }
@@ -690,10 +746,10 @@ void  Relay_manager( int ch , int st ) {
 #endif
 
 void  Thrm_controller( void ) {
-  if ( cycles < (  TH_AVERAGE + 5 ) ) {
+  if ( cycles < ( TH_AVERAGE ) ) {
     AutoInit = __OFF;
   } else {
-    if ( AutoInit == __OFF ) {
+/*    if ( AutoInit == __OFF ) {
        Force = 0;
       VEnable = 0;
       MEnable = 0;
@@ -701,7 +757,7 @@ void  Thrm_controller( void ) {
       NEnable = 0;
       SForce = 0;
     }
-      
+*/      
     AutoInit = __ON;
 //    _L_CNTR_INIT;
   }
@@ -709,10 +765,8 @@ void  Thrm_controller( void ) {
   if ( AutoInit == __ON ) {
     if ( ! Force  ) {
       Controller = __ON;
-//      _L_CNTR_AUTO;
     } else {
       Controller = __OFF;
-//      _L_CNTR_MANU;
     }
       
     if ( Controller == __ON ) {
@@ -758,13 +812,13 @@ void  Thrm_controller( void ) {
         Relay_manager( __NOT_USED , __OFF );
       }
     }
-  } else {
+  } /* else {
     Force = 1;
     Relay_manager( __VIDEO , __ON );
     Relay_manager( __MAIN_SIDE , __ON );
     Relay_manager( __OTHR_SIDE , __ON );
     Relay_manager( __NOT_USED , __ON );
-  }
+  } */
 }
 
 
@@ -869,7 +923,16 @@ void checkSer( void ) {
 
 
 void LedCntr( void ) {
-
+  _L_PLS_OFF;  
+  _L_UPDATE;
+  delay( 20 );
+  _L_PLS_ON;
+  _L_UPDATE;
+  delay( 60 );
+  _L_PLS_OFF;  
+  _L_UPDATE;
+  delay( 20 );
+  
   if ( VEnable == __DISABLE ) {
     if ( nrun % 2 )
         _L_VV_DIS;
@@ -929,6 +992,7 @@ void LedCntr( void ) {
     set_ls_temp( _LN_SV , aTHV );
     set_ls_temp( _LN_SE , aTHE );
     set_ls_temp( _LN_SA , aTHA );
+    
   } else {
     if ( nrun % 2 )
         _L_CNTR_INIT;
@@ -936,13 +1000,23 @@ void LedCntr( void ) {
         _L_CNTR_OFF;
    }
 
+  if ( AutoInit == __ON ) {
+    c_Dval = constrain( abs( aTHDrv  * 1000 ) , 0 , 60 );
+    Dval = map( c_Dval , 0 , 60 , 0 , 255 );
+    if ( c_Dval < 3 ) {
+      _L_DRV_OFF;
+    } else {
+      if ( aTHDrv > 0 ) {
+        _L_DRV_HOT( Dval );
+      } else {
+        _L_DRV_CLD( Dval );
+      }
+    }
+  }
+  
   if ( gsame > ( __SAME_LIMIT * 0.2 ) )
     _L_CNTR_INIT;
-    
-  _L_PLS_ON;
-  _L_UPDATE;
-  delay( 5 );
-  _L_PLS_OFF;  
+
   _L_UPDATE;
 }
 
@@ -955,7 +1029,7 @@ void setup(void) {
   FastLED.setBrightness(BRIGHTNESS);
  
   _ALL_LED_OFF
-  _L_ON_ON;
+//  _L_ON_ON;
   _L_UPDATE;
   
   for( byte a = 0; a < TH_AVERAGE ; a++ ) 
@@ -1058,7 +1132,9 @@ void setup(void) {
     Serial.println();
     _L_SET( 5 , _L_0XFF , _L_0XFF , 0 );
     _L_UPDATE;
-    delay( 500 );
+    delay( 3000 );
+    _L_ON_ON;
+    _L_UPDATE;
 
     //  ---------
     sensors.requestTemperatures();
@@ -1074,6 +1150,8 @@ void setup(void) {
       _L_UPDATE;
       delay( 500 );
     }
+    _L_ON_ON;
+    _L_UPDATE;
     delay( 3000 );
     bigFail();
   }
@@ -1100,6 +1178,8 @@ void loop(void) {
   
   checkSer();
   avg_reading();
+  if ( cycles < 3 )
+    avg_reset();
   Thrm_controller();
   LedCntr();
   SerDebug();
