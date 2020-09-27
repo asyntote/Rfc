@@ -14,10 +14,12 @@
 #include <DallasTemperature.h>
 #include <FastLED.h>
 #include "Relay.h"
+#include "ArrbotMonitor.h"
+
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.8-042"
+#define RFC_VERSION         "1.8-063"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -29,6 +31,7 @@ FASTLED_USING_NAMESPACE
 
 #define __INTERNAL    0
 #define __TTTERM      1
+#define __PLOT        2
 
 #define __TERMINAL    __TTTERM
 
@@ -84,22 +87,22 @@ byte delta = __OFF;
 #define __READING     __NEW
 
 #if ( __READING == __OLD )
-
-  #define RFC_DELAY     500
   #define __RESOLUTION  9
   #define __AVG_READ    4
-
 #elif ( __READING == __NEW )
-
-  #define RFC_DELAY     500
   #define __RESOLUTION  11
-  
+#endif
+
+#if ( __TERMINAL == __PLOT )
+  #define RFC_DELAY     1000
+#else
+  #define RFC_DELAY     500
 #endif
 
 #define __ERROR_CHECK   __ENABLE
 
-#define TH_AVERAGE  60
-#define DRV_AVERAGE 150
+#define TH_AVERAGE  250
+#define DRV_AVERAGE 250
 
 #define DRV_TH      5
 
@@ -425,11 +428,11 @@ void  printStatus( void ) {
 
 void avg_reset( void ) {
   for( int c = 0 ; c < TH_AVERAGE ; c++ )
-    THA_s[c] = 0.0;
+    THA_s[c] = aTHA;
   for( int c = 0 ; c < TH_AVERAGE ; c++ )
-    THE_s[c] = 0.0;
+    THE_s[c] = aTHE;
   for( int c = 0 ; c < TH_AVERAGE ; c++ )
-    THV_s[c] = 0.0;
+    THV_s[c] = aTHV;
   for( int c = 0 ; c < DRV_AVERAGE ; c++ )
     THDrv_s[c] = 0.0;
 
@@ -460,118 +463,99 @@ void bigFail( void ) {
 
 
 void SerDebug( void ) {
-
-  if ( delta == __OFF ) {
-    if ( Texe ) {
-      if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
-        Serial.println("\e[1K");
-        Serial.print("\e[1A");
+  if ( __TERMINAL != __PLOT ) {
+    if ( delta == __OFF ) {
+      if ( Texe ) {
+        if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
+          Serial.println("\e[1K");
+          Serial.print("\e[1A");
+        }
+        Serial.print(" CH A/E/V: ");
+        __BOLD;
+        Serial.print(aTHA , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(aTHE , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(aTHV , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print(" - Der_v: ");
+        __BOLD;
+        Serial.print( aTHDrv * 1000 , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print( "/" );
+        Serial.print( Dval );
+        Serial.print( "/" );
+        Serial.print( c_Dval );
+        __NORMAL;
+        Serial.print(" - Me/Mv: ");
+        __BOLD;
+        Serial.print(mTHE , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(mTHV , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print("    -  ");
+        printStatus();
+        Serial.print( abs( Texe - RFC_DELAY ) < 2?" OK":" NOT OK" );
       }
-      Serial.print(" CH A/E/V: ");
-      __BOLD;
-      Serial.print(aTHA , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print("/");
-      __BOLD;
-      Serial.print(aTHE , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print("/");
-      __BOLD;
-      Serial.print(aTHV , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print(" - Der_v: ");
-      __BOLD;
-      Serial.print( aTHDrv * 1000 , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print( "/" );
-      Serial.print( Dval );
-      Serial.print( "/" );
-      Serial.print( c_Dval );
-      __NORMAL;
-      Serial.print(" - Me/Mv: ");
-      __BOLD;
-      Serial.print(mTHE , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print("/");
-      __BOLD;
-      Serial.print(mTHV , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print("    -  ");
-      printStatus();
-/*      Serial.print("  -  ");
-      Serial.print("Cmd: ");
-      if ( inByte ) {
-        Serial.print( (char)inByte );
-      }
-      else
-        Serial.print( " " );
-      Serial.print("  -  ");
-      Serial.print("UP time: ");
-      printDigits(hours);
-      Serial.print(":");
-      printDigits(minutes);
-      Serial.print(":");
-      printDigits(seconds);
-      Serial.print("  -  ");
-      Serial.print("ms: ");
-      Serial.print( Texe );
- */
-      Serial.print( abs( Texe - RFC_DELAY ) < 2?" OK":" NOT OK" );
     }
-  }
-  else if ( delta == __ON ) {
-    if ( Texe ) {
-      if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
-        Serial.println("\e[1K");
-        Serial.print("\e[1A");
+    else if ( delta == __ON ) {
+      if ( Texe ) {
+        if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
+          Serial.println("\e[1K");
+          Serial.print("\e[1A");
+        }
+        Serial.print(" CH A/dE/dV: ");
+        __BOLD;
+        Serial.print(aTHA , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(aTHE - aTHA , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(aTHV - aTHA , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print(" - Eq/Sm-a-e-v: ");
+        __BOLD;
+        Serial.print(equal);
+        __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(gsame);
+        Serial.print("-");
+        Serial.print(asame , 1);
+        Serial.print("-");
+        Serial.print(esame);
+        Serial.print("-");
+        Serial.print(vsame);
+        __NORMAL;
+        Serial.print("  -  ");
+        printStatus();
       }
-      Serial.print(" CH A/dE/dV: ");
-      __BOLD;
-      Serial.print(aTHA , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print("/");
-      __BOLD;
-      Serial.print(aTHE - aTHA , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print("/");
-      __BOLD;
-      Serial.print(aTHV - aTHA , SERIAL_DIGIT );
-      __NORMAL;
-      Serial.print(" - Eq/Sm-a-e-v: ");
-      __BOLD;
-      Serial.print(equal);
-      __NORMAL;
-      Serial.print("/");
-      __BOLD;
-      Serial.print(gsame);
-      Serial.print("-");
-      Serial.print(asame , 1);
-      Serial.print("-");
-      Serial.print(esame);
-      Serial.print("-");
-      Serial.print(vsame);
-      __NORMAL;
-      Serial.print("  -  ");
-      printStatus();
-      Serial.print("  -  ");
-      Serial.print("Cmd: ");
-      if ( inByte ) {
-        Serial.print( (char)inByte );
-      }
-      else
-        Serial.print( " " );
-      Serial.print("  -  ");
-      Serial.print("ms: ");
-      Serial.print( ( millis() - time_amb ) );
     }
+    if ( inHelp ) {
+      Serial.println();
+      showHelp();
+      inHelp = 0;
+    }
+    if ( __SCROLL == __ON )
+      Serial.println();
   }
-  if ( inHelp ) {
-    Serial.println();
-    showHelp();
-    inHelp = 0;
+  else {
+    DISPLAY( RFC_VERSION );
+    MONITOR2( "Case" , aTHE );
+    MONITOR2( "Video" , aTHV );
+    MONITOR2( "Room" , aTHA );
+    MONITOR2( "Derivative" , aTHDrv * 1000 );
+    MONITOR_ENDL();
   }
-  if ( __SCROLL == __ON )
-    Serial.println();
 }
 
 
@@ -746,7 +730,7 @@ void  Relay_manager( int ch , int st ) {
 #endif
 
 void  Thrm_controller( void ) {
-  if ( cycles < ( TH_AVERAGE ) ) {
+  if ( cycles < 15 ) {
     AutoInit = __OFF;
   } else {
 /*    if ( AutoInit == __OFF ) {
@@ -1036,20 +1020,26 @@ void setup(void) {
     THV_s[a] = 0.0;
   for( byte a = 0; a < TH_AVERAGE ; a++ )
     THE_s[a] = 0.0;
+
   Serial.begin(115200);
-  if ( __TERMINAL != __INTERNAL ) {
-    for( byte a = 0; a < 40 ; a++ )
-      Serial.println();
-    Serial.println( "\e[1J" );
-    Serial.print("\e[2J");
+
+  if ( __TERMINAL != __PLOT ) {
+    if ( __TERMINAL != __INTERNAL ) {
+      for( byte a = 0; a < 40 ; a++ )
+        Serial.println();
+      Serial.println( "\e[1J" );
+      Serial.print("\e[2J");
+    }
+    Serial.println();
+    Serial.println("---------------------------------------------------");
+    Serial.println();
+    Serial.print  ("Reflection Fan Controller [RFC v");
+    Serial.print( RFC_VERSION );
+    Serial.print("]");
+    Serial.println();
   }
-  Serial.println();
-  Serial.println("---------------------------------------------------");
-  Serial.println();
-  Serial.print  ("Reflection Fan Controller [RFC v");
-  Serial.print( RFC_VERSION );
-  Serial.print("]");
-  Serial.println();
+  else
+    MONITOR_RESET();
 
   
   RVideo.begin();
@@ -1060,76 +1050,112 @@ void setup(void) {
 
   //  ------------------------------------------------------------------- SENSORE BEGIN
   pinMode( ONE_WIRE_BUS , INPUT_PULLUP );
-  Serial.println();
-  Serial.print("Thermal Sensor Initializing [DS18B20]...");
-  Serial.println();
-  Serial.print("  Locating devices...");
+  if ( __TERMINAL != __PLOT ) {
+    Serial.println();
+    Serial.print("Thermal Sensor Initializing [DS18B20]...");
+    Serial.println();
+    Serial.print("  Locating devices...");
+  }
   sensors.begin();
-  Serial.print("Found ");
-  Serial.print(sensors.getDeviceCount(), DEC);
-  Serial.println(" devices.");
-  Serial.println();
-  
+  if ( __TERMINAL != __PLOT ) {
+    Serial.print("Found ");
+    Serial.print(sensors.getDeviceCount(), DEC);
+    Serial.println(" devices.");
+    Serial.println();
+  }
+  else
+    sensors.getDeviceCount();
   if ( sensors.getDeviceCount() == _NUM_SENSORS ) {
     //  ---------
-    Serial.println("  Ambient thermal sensor");
-    Serial.print("    parasite power is: ");
-    if (sensors.isParasitePowerMode())
-      Serial.println("ON");
-    else
-      Serial.println("OFF");
-    if (!sensors.getAddress(THambnt, TH_AMBNT))
-      Serial.println("Unable to find address for THambnt"); 
-    Serial.print("    Address: ");
-    printAddress(THambnt);
-    Serial.println();
+    if ( __TERMINAL != __PLOT ) {
+      Serial.println("  Ambient thermal sensor");
+      Serial.print("    parasite power is: ");
+      if ( sensors.isParasitePowerMode() )
+        Serial.println("ON");
+      else
+        Serial.println("OFF");
+      if (!sensors.getAddress(THambnt, TH_AMBNT))
+        Serial.println("Unable to find address for THambnt"); 
+      Serial.print("    Address: ");
+      printAddress(THambnt);
+      Serial.println();
+    }
+    else {
+      sensors.isParasitePowerMode();
+      sensors.getAddress(THambnt, TH_AMBNT);
+    }
     sensors.setResolution(THambnt, __RESOLUTION );
-    Serial.print("    Resolution: ");
-    Serial.print(sensors.getResolution(THambnt), DEC); 
-    Serial.print(" bit");
-    Serial.println();
+    if ( __TERMINAL != __PLOT ) {
+      Serial.print("    Resolution: ");
+      Serial.print(sensors.getResolution(THambnt), DEC); 
+      Serial.print(" bit");
+      Serial.println();
+    }
+    else
+      sensors.getResolution(THambnt);
+    sensors.getDeviceCount();
     _L_SET( 7 , _L_0XFF , _L_0XFF , 0 );
     _L_UPDATE;
     delay( 500 );
 
     //  ---------
-    Serial.println("  Video thermal sensor");
-    Serial.print("    parasite power is: ");
-    if (sensors.isParasitePowerMode())
-      Serial.println("ON");
-    else
-      Serial.println("OFF");
-    if (!sensors.getAddress(THvideo, TH_VIDEO))
-      Serial.println("Unable to find address for THvideo"); 
-    Serial.print("    Address: ");
-    printAddress(THvideo);
-    Serial.println();
+    if ( __TERMINAL != __PLOT ) {
+      Serial.println("  Video thermal sensor");
+      Serial.print("    parasite power is: ");
+      if (sensors.isParasitePowerMode())
+        Serial.println("ON");
+      else
+        Serial.println("OFF");
+      if (!sensors.getAddress(THvideo, TH_VIDEO))
+        Serial.println("Unable to find address for THvideo"); 
+      Serial.print("    Address: ");
+      printAddress(THvideo);
+      Serial.println();
+    }
+    else {
+      sensors.isParasitePowerMode();
+      sensors.getAddress(THvideo, TH_VIDEO);
+    }
     sensors.setResolution(THvideo, __RESOLUTION );
-    Serial.print("    Resolution: ");
-    Serial.print(sensors.getResolution(THvideo), DEC); 
-    Serial.print(" bit");
-    Serial.println();
+    if ( __TERMINAL != __PLOT ) {
+      Serial.print("    Resolution: ");
+      Serial.print(sensors.getResolution(THvideo), DEC); 
+      Serial.print(" bit");
+      Serial.println();
+    }
+    else
+      sensors.getResolution(THvideo);
     _L_SET( 6 , _L_0XFF , _L_0XFF , 0 );
     _L_UPDATE;
     delay( 500 );
 
     //  ---------
-    Serial.println("  Environment thermal sensor");
-    Serial.print("    parasite power is: "); 
-    if (sensors.isParasitePowerMode())
-      Serial.println("ON");
-    else
-      Serial.println("OFF");
-    if (!sensors.getAddress(THenvrm, TH_ENVRM))
-      Serial.println("Unable to find address for THenvrm"); 
-    Serial.print("    Address: ");
-    printAddress(THenvrm);
-    Serial.println();
+    if ( __TERMINAL != __PLOT ) {
+      Serial.println("  Environment thermal sensor");
+      Serial.print("    parasite power is: "); 
+      if (sensors.isParasitePowerMode())
+        Serial.println("ON");
+      else
+        Serial.println("OFF");
+      if (!sensors.getAddress(THenvrm, TH_ENVRM))
+        Serial.println("Unable to find address for THenvrm"); 
+      Serial.print("    Address: ");
+      printAddress(THenvrm);
+      Serial.println();
+    }
+    else {
+      sensors.isParasitePowerMode();
+      sensors.getAddress(THenvrm, TH_ENVRM);
+    }
     sensors.setResolution(THenvrm, __RESOLUTION );
-    Serial.print("    Resolution: ");
-    Serial.print(sensors.getResolution(THvideo), DEC); 
-    Serial.print(" bit");
-    Serial.println();
+    if ( __TERMINAL != __PLOT ) {
+      Serial.print("    Resolution: ");
+      Serial.print(sensors.getResolution(THvideo), DEC); 
+      Serial.print(" bit");
+      Serial.println();
+    }
+    else
+      sensors.getResolution(THenvrm);
     _L_SET( 5 , _L_0XFF , _L_0XFF , 0 );
     _L_UPDATE;
     delay( 3000 );
@@ -1141,10 +1167,13 @@ void setup(void) {
     aTHV = sensors.getTempC( THvideo );
     aTHE = sensors.getTempC( THenvrm );
     aTHA = sensors.getTempC( THambnt );
+    avg_reset();
   } else {
-    Serial.println();
-    Serial.print( "Sensors found lower than the need: " );
-    Serial.println( sensors.getDeviceCount() );
+    if ( __TERMINAL != __PLOT ) {
+      Serial.println();
+      Serial.print( "Sensors found lower than the need: " );
+      Serial.println( sensors.getDeviceCount() );
+    }
     for ( int i = 0 ; i < sensors.getDeviceCount() ; i++ ) {
       _L_SET( ( 8 - i ) , _L_0XFF , _L_0XFF , 0 );
       _L_UPDATE;
@@ -1159,15 +1188,20 @@ void setup(void) {
   //  ----------------------------------------------------------------- GENERAL BEGIN
   cycles = 0;
   
-  Serial.println();
-  Serial.println("---------------------------------------------------");
-  showHelp();
+  if ( __TERMINAL != __PLOT ) {
+    Serial.println();
+    Serial.println("---------------------------------------------------");
+  }
+  if ( __TERMINAL != __PLOT )
+    showHelp();
   _L_SET( 7 , 0 , 0 , 0 );
   _L_SET( 6 , 0 , 0 , 0 );
   _L_SET( 5 , 0 , 0 , 0 );
   _L_UPDATE;
   delay(2000);
-  Serial.println( "" );
+  if ( __TERMINAL != __PLOT ) {
+    Serial.println( "" );
+  }
 }
 
 
@@ -1178,8 +1212,8 @@ void loop(void) {
   
   checkSer();
   avg_reading();
-  if ( cycles < 3 )
-    avg_reset();
+//  if ( cycles < 3 )
+//    avg_reset();
   Thrm_controller();
   LedCntr();
   SerDebug();
