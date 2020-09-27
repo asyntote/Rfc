@@ -13,13 +13,17 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <FastLED.h>
+
+#include <Thermistor.h>
+#include <NTC_Thermistor.h>
+#include <SmoothThermistor.h>
+
 #include "Relay.h"
 #include "ArrbotMonitor.h"
 
-
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.8-063"
+#define RFC_VERSION         "1.9-031"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -45,10 +49,12 @@ FASTLED_USING_NAMESPACE
 #define __BOLD        if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
 
 //  ------------------------------------------------------------------- RFC DEFINES
-#define THV_ACTIVATION      40.0
-#define THV_DEACTIVATION    50.0
-#define THE_ACTIVATION      40.0 
-#define THE_DEACTIVATION    35.0
+#define THE_ACTIVATION      ( aTHA + 12.0 )
+#define THE_DEACTIVATION    ( aTHA + 7.0 )
+#define THV_ACTIVATION      45.0
+#define THV_DEACTIVATION    40.0
+#define THC_ACTIVATION      42.0
+#define THC_DEACTIVATION    40.0
 
 #define __ERRORE_STOP       while(1)
 
@@ -65,8 +71,8 @@ int AutoInit = __OFF;
 int    Force = 0;             //  Force Generale  (accende)
 int   SForce = 0;             //  Stop Forzato
 int  VEnable = 0;             //  Canale Video
-int  MEnable = 0;             //  Canale Main Side
-int  OEnable = 0;             //  Canale Other Side
+int  REnable = 0;             //  Canale Main Side
+int  FEnable = 0;             //  Canale Other Side
 int  NEnable = 0;             //  Canale N
 
 int   inHelp = 0;
@@ -75,7 +81,20 @@ int Controller = __ON;
 
 byte delta = __OFF;
 
-//  ------------------------------------------------------------------- SENSOR DEFINES
+
+//  ------------------------------------------------------------------- ANALOG SENSOR DEFINES
+
+#define SENSOR_PIN              A1
+#define REFERENCE_RESISTANCE    10000
+#define NOMINAL_RESISTANCE      10000
+#define NOMINAL_TEMPERATURE     25.5
+#define B_VALUE                 3950
+#define SMOOTHING_FACTOR        10
+
+Thermistor* originThermistor = new NTC_Thermistor( SENSOR_PIN, REFERENCE_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, B_VALUE );
+Thermistor* cpu = new SmoothThermistor( originThermistor , SMOOTHING_FACTOR );
+
+//  ------------------------------------------------------------------- DIGITAL SENSOR DEFINES
 #define ONE_WIRE_BUS  18
 #define SERIAL_DIGIT  2
 
@@ -101,8 +120,8 @@ byte delta = __OFF;
 
 #define __ERROR_CHECK   __ENABLE
 
-#define TH_AVERAGE  250
-#define DRV_AVERAGE 250
+#define TH_AVERAGE  20
+#define DRV_AVERAGE 20
 
 #define DRV_TH      5
 
@@ -133,25 +152,33 @@ float THE_s[ TH_AVERAGE ];
 float THDrv_s[ DRV_AVERAGE ];
 
 float aTHA = 0.0;
-float aTHV = 0.0;
 float aTHE = 0.0;
-float aTHDrv = 0.0;
-float oTHV = 0.0;
+float aTHV = 0.0;
+float aTHC = 0.0;
 
+float aTHDrv = 0.0;
+
+float oTHE = 0.0;
+float oTHV = 0.0;
+float oTHC = 0.0;
+
+float mTHC = 0.0;
 float mTHV = 0.0;
 float mTHE = 0.0;
 
     //  -------------------------------------------- LED REFERENCE VALUE
 
 #define THA_MAX     40.0
-#define THA_MIN     25.0
+#define THA_MIN     20.0
 
-#define THE_MAX     55.0
-#define THE_MIN     30.0
+#define THE_MAX     ( aTHA + 20.0 )
+#define THE_MIN     aTHA
 
-#define THV_MAX     65.0
-#define THV_MIN     45.0
+#define THV_MAX     55.0
+#define THV_MIN     30.0
 
+#define THC_MAX     50.0
+#define THC_MIN     25.0
 
 #define __EQUAL_LIMIT   600    //  uguali tra i vari sensori                   600 = 5 minuto
 #define __SAME_LIMIT    1200   //  stessa lettura sul singolo sensore         1200 = 10 minuti
@@ -161,6 +188,7 @@ byte gsame = 0;
 float asame = 0;
 byte esame = 0;
 byte vsame = 0;
+byte csame = 0;
 
 void bigFail( void );
 
@@ -169,6 +197,7 @@ void  SensErrorCheck( void ) {
   static float  otha = 0.0;
   static float  othe = 0.0;
   static float  othv = 0.0;
+  static float  othc = 0.0;
 
 
   if ( otha == aTHA )
@@ -183,6 +212,10 @@ void  SensErrorCheck( void ) {
     vsame++;
   else
     vsame = 0;
+  if ( othc == aTHC )
+    csame++;
+  else
+    csame = 0;
   gsame = (byte)asame;
   if ( esame > gsame )
     gsame = esame;  
@@ -194,6 +227,7 @@ void  SensErrorCheck( void ) {
   otha = aTHA;
   othe = aTHE;
   othv = aTHV;
+  othc = aTHC;
       
   if ( ( aTHA == aTHE ) || ( aTHE == aTHV ) || ( aTHV == aTHA ) ) {
     equal++;
@@ -218,20 +252,20 @@ void  SensErrorCheck( void ) {
 #define RELAY_DLY   250
 
 #define __VIDEO     5
-#define __MAIN_SIDE 7
-#define __OTHR_SIDE 4
+#define __REAR 7
+#define __FRONT 4
 #define __NOT_USED  6
 
 #define __NORMALY_OPENED  false
 #define __NORMALY_CLOSED  true
 
 Relay   RVideo     ( __VIDEO     , __NORMALY_OPENED );
-Relay   RMainPanel ( __MAIN_SIDE , __NORMALY_OPENED );
-Relay   ROtherPanel( __OTHR_SIDE , __NORMALY_OPENED );
+Relay   RRear ( __REAR , __NORMALY_OPENED );
+Relay   RFront( __FRONT , __NORMALY_OPENED );
 
 byte Rvd = __OFF;
-byte Rmp = __OFF;
-byte Rop = __OFF;
+byte Rrr = __OFF;
+byte Rfr = __OFF;
 byte Rnu = __OFF;
 
 //  ------------------------------------------------------------------- MMACROS FROM DateTime.h
@@ -257,14 +291,15 @@ byte Rnu = __OFF;
 
 CRGB leds[NUM_LEDS];
 
-#define _LN_SV      0
-#define _LN_SE      1
-#define _LN_SA      2
-#define _LN_SNU     3
+#define _LN_SV      1
+#define _LN_SE      2
+#define _LN_SA      3
+#define _LN_SC      0
+#define _LN_PLS     4
 #define _LN_CNTR    4
-#define _LN_VV      5
-#define _LN_VM      6
-#define _LN_VO      7
+#define _LN_FV      6
+#define _LN_FF      5
+#define _LN_FT      7
 #define _LN_DRV     8
 #define _LN_ON      9
 
@@ -273,44 +308,44 @@ CRGB leds[NUM_LEDS];
 #define _L_ERROR_ON(a)    leds[ a ].setRGB( _L_0XFF, 0, 0 )
 #define _L_ERROR_OFF(a)   leds[ a ].setRGB( 0, 0, 0 )
 
-#define _L_ON_ON          leds[9].setRGB( 0, _L_0XFF, 0)
-#define _L_ON_OFF         leds[9].setRGB( 0, 0, 0)
+#define _L_ON_ON          leds[_LN_ON].setRGB( 0, _L_0XFF, 0)
+#define _L_ON_OFF         leds[_LN_ON].setRGB( 0, 0, 0)
 
-#define _L_CNTR_OFF       leds[4].setRGB( 0, 0, 0)
-#define _L_CNTR_INIT      leds[4].setRGB( _L_0XFF, _L_0XFF, 0)
-#define _L_CNTR_MANU      leds[4].setRGB( _L_0XFF, 0, 0)
-#define _L_CNTR_AUTO      leds[4].setRGB( 0, _L_0XFF, 0)
+#define _L_CNTR_OFF       leds[_LN_CNTR].setRGB( 0, 0, 0)
+#define _L_CNTR_INIT      leds[_LN_CNTR].setRGB( _L_0XFF, _L_0XFF, 0)
+#define _L_CNTR_MANU      leds[_LN_CNTR].setRGB( _L_0XFF, 0, 0)
+#define _L_CNTR_AUTO      leds[_LN_CNTR].setRGB( 0, _L_0XFF, 0)
 
-#define _L_VO_ON          leds[7].setRGB( 0, _L_0XFF, 0)
-#define _L_VO_OFF         leds[7].setRGB( 0, 0, 0)
-#define _L_VO_DIS         leds[7].setRGB( _L_0XFF, 0, 0)
+#define _L_FT_ON          leds[_LN_FT].setRGB( 0, _L_0XFF, 0)
+#define _L_FT_OFF         leds[_LN_FT].setRGB( 0, 0, 0)
+#define _L_FT_DIS         leds[_LN_FT].setRGB( _L_0XFF, 0, 0)
 
-#define _L_VM_ON          leds[6].setRGB( 0, _L_0XFF, 0)
-#define _L_VM_OFF         leds[6].setRGB( 0, 0, 0)
-#define _L_VM_DIS         leds[6].setRGB( _L_0XFF, 0, 0)
+#define _L_FF_ON          leds[_LN_FF].setRGB( 0, _L_0XFF, 0)
+#define _L_FF_OFF         leds[_LN_FF].setRGB( 0, 0, 0)
+#define _L_FF_DIS         leds[_LN_FF].setRGB( _L_0XFF, 0, 0)
 
-#define _L_VV_ON          leds[5].setRGB( 0, _L_0XFF, 0)
-#define _L_VV_OFF         leds[5].setRGB( 0, 0, 0)
-#define _L_VV_DIS         leds[5].setRGB( _L_0XFF, 0, 0)
+#define _L_FV_ON          leds[_LN_FV].setRGB( 0, _L_0XFF, 0)
+#define _L_FV_OFF         leds[_LN_FV].setRGB( 0, 0, 0)
+#define _L_FV_DIS         leds[_LN_FV].setRGB( _L_0XFF, 0, 0)
 
-#define _L_SA_OFF         leds[2].setRGB( 0, 0, 0)
-#define _L_SA_SET(a,b,c)  leds[2].setRGB( a, b, c)
+#define _L_SA_OFF         leds[_LN_SA].setRGB( 0, 0, 0)
+#define _L_SA_SET(a,b,c)  leds[_LN_SA].setRGB( a, b, c)
 
-#define _L_SE_OFF         leds[1].setRGB( 0, 0, 0)
-#define _L_SE_SET(a,b,c)  leds[1].setRGB( a, b, c)
+#define _L_SE_OFF         leds[_LN_SE].setRGB( 0, 0, 0)
+#define _L_SE_SET(a,b,c)  leds[_LN_SE].setRGB( a, b, c)
 
-#define _L_SV_OFF         leds[0].setRGB( 0, 0, 0)
-#define _L_SV_SET(a,b,c)  leds[0].setRGB( a, b, c)
+#define _L_SV_OFF         leds[_LN_SV].setRGB( 0, 0, 0)
+#define _L_SV_SET(a,b,c)  leds[_LN_SV].setRGB( a, b, c)
 
-#define _L_PLS_ON         leds[4].setRGB( 0, 0, 128)
-#define _L_PLS_OFF        leds[4].setRGB( 0, 0, 0)
+#define _L_PLS_ON         leds[_LN_PLS].setRGB( 0, 0, 128)
+#define _L_PLS_OFF        leds[_LN_PLS].setRGB( 0, 0, 0)
 
 #define _L_DRV_OFF        leds[_LN_DRV].setRGB( 0, 0, 0)
 #define _L_DRV_HOT(a)     leds[_LN_DRV].setRGB( a, 0, 0)
 #define _L_DRV_CLD(a)     leds[_LN_DRV].setRGB( 0, 0, a)
 
-#define _L_NV8_OFF        leds[8].setRGB( 0, 0, 0)
-#define _L_NS3_OFF        leds[3].setRGB( 0, 0, 0)
+#define _L_NV8_OFF        leds[_LN_DRV].setRGB( 0, 0, 0)
+#define _L_NS3_OFF        leds[_LN_SC].setRGB( 0, 0, 0)
 
 #define _L_SET(l,a,b,c)   leds[ l ].setRGB( a, b, c)
 #define _L_UPDATE         FastLED.show()
@@ -382,12 +417,12 @@ void  printStatus( void ) {
       Serial.print( Rvd?"V":"-" );
     else 
       Serial.print( "d" );  
-    if ( MEnable == __ENABLE )  
-      Serial.print( Rmp?"M":"-" );
+    if ( REnable == __ENABLE )  
+      Serial.print( Rrr?"M":"-" );
     else 
       Serial.print( "d" );  
-    if ( OEnable == __ENABLE )
-      Serial.print( Rop?"O":"-" );
+    if ( FEnable == __ENABLE )
+      Serial.print( Rfr?"O":"-" );
     else 
       Serial.print( "d" );  
     if ( NEnable == __ENABLE )
@@ -409,12 +444,12 @@ void  printStatus( void ) {
       Serial.print( Rvd?"\e[1mV\e[0m":"-" );
     else 
       Serial.print( "\e[1md\e[1m" );  
-    if ( MEnable == __ENABLE )  
-      Serial.print( Rmp?"\e[1mM\e[0m":"-" );
+    if ( REnable == __ENABLE )  
+      Serial.print( Rrr?"\e[1mM\e[0m":"-" );
     else 
       Serial.print( "\e[1md\e[0m" );  
-    if ( OEnable == __ENABLE )
-      Serial.print( Rop?"\e[1mO\e[0m":"-" );
+    if ( FEnable == __ENABLE )
+      Serial.print( Rfr?"\e[1mO\e[0m":"-" );
     else 
       Serial.print( "\e[1md\e[0m" );  
     if ( NEnable == __ENABLE )
@@ -436,9 +471,6 @@ void avg_reset( void ) {
   for( int c = 0 ; c < DRV_AVERAGE ; c++ )
     THDrv_s[c] = 0.0;
 
-  aTHA = 0.0;
-  aTHE = 0.0;
-  aTHV = 0.0;
   aTHDrv = 0.0;
 }
 
@@ -470,7 +502,7 @@ void SerDebug( void ) {
           Serial.println("\e[1K");
           Serial.print("\e[1A");
         }
-        Serial.print(" CH A/E/V: ");
+        Serial.print(" CH A/E/V/C: ");
         __BOLD;
         Serial.print(aTHA , SERIAL_DIGIT );
         __NORMAL;
@@ -482,6 +514,10 @@ void SerDebug( void ) {
         __BOLD;
         Serial.print(aTHV , SERIAL_DIGIT );
         __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(aTHC , SERIAL_DIGIT );
+        __NORMAL;
         Serial.print(" - Der_v: ");
         __BOLD;
         Serial.print( aTHDrv * 1000 , SERIAL_DIGIT );
@@ -491,7 +527,7 @@ void SerDebug( void ) {
         Serial.print( "/" );
         Serial.print( c_Dval );
         __NORMAL;
-        Serial.print(" - Me/Mv: ");
+        Serial.print(" - Me/Mv/Mc: ");
         __BOLD;
         Serial.print(mTHE , SERIAL_DIGIT );
         __NORMAL;
@@ -499,9 +535,13 @@ void SerDebug( void ) {
         __BOLD;
         Serial.print(mTHV , SERIAL_DIGIT );
         __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(mTHC , SERIAL_DIGIT );
+        __NORMAL;
         Serial.print("    -  ");
         printStatus();
-        Serial.print( abs( Texe - RFC_DELAY ) < 2?" OK":" NOT OK" );
+        Serial.print( abs( Texe - RFC_DELAY ) < 2?" OK ":" NOT OK " );
       }
     }
     else if ( delta == __ON ) {
@@ -510,7 +550,7 @@ void SerDebug( void ) {
           Serial.println("\e[1K");
           Serial.print("\e[1A");
         }
-        Serial.print(" CH A/dE/dV: ");
+        Serial.print(" CH A/dE/dV/dC: ");
         __BOLD;
         Serial.print(aTHA , SERIAL_DIGIT );
         __NORMAL;
@@ -522,7 +562,11 @@ void SerDebug( void ) {
         __BOLD;
         Serial.print(aTHV - aTHA , SERIAL_DIGIT );
         __NORMAL;
-        Serial.print(" - Eq/Sm-a-e-v: ");
+        Serial.print("/");
+        __BOLD;
+        Serial.print(aTHC - aTHA , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print(" - Eq/Sm-a-e-v-c: ");
         __BOLD;
         Serial.print(equal);
         __NORMAL;
@@ -535,9 +579,9 @@ void SerDebug( void ) {
         Serial.print(esame);
         Serial.print("-");
         Serial.print(vsame);
+        Serial.print("-");
+        Serial.print(csame);
         __NORMAL;
-        Serial.print("  -  ");
-        printStatus();
       }
     }
     if ( inHelp ) {
@@ -550,10 +594,18 @@ void SerDebug( void ) {
   }
   else {
     DISPLAY( RFC_VERSION );
+
+    MONITOR2( "Room" , aTHA );
     MONITOR2( "Case" , aTHE );
     MONITOR2( "Video" , aTHV );
-    MONITOR2( "Room" , aTHA );
-    MONITOR2( "Derivative" , aTHDrv * 1000 );
+    MONITOR2( "Cpu" , aTHC );
+
+    DISPLAY2( "Room" , aTHA );
+    DISPLAY2( "Case" , aTHE );
+    DISPLAY2( "Video" , aTHV );
+    DISPLAY2( "Cpu" , aTHC );
+    DISPLAY2( "Derivative" , aTHDrv * 1000 );
+
     MONITOR_ENDL();
   }
 }
@@ -599,6 +651,7 @@ void  showHelp( void ) {
   }
 }
 
+
 void  Relay_manager( int ch , int st ) {
   byte mod = 0;
   switch ( ch ) {
@@ -614,29 +667,29 @@ void  Relay_manager( int ch , int st ) {
       }
       break;
     }
-    case __MAIN_SIDE : {
-      if ( Rmp != st ) {
-        Rmp = st;
+    case __REAR : {
+      if ( Rrr != st ) {
+        Rrr = st;
         if ( st == __ON ) {
-          RMainPanel.turnOn();
-          _L_VM_ON;
+          RRear.turnOn();
+          _L_FF_ON;
         } else {
-          RMainPanel.turnOff();
-          _L_VM_OFF;
+          RRear.turnOff();
+          _L_FF_OFF;
         }
         mod = 1;
       }
       break;
     }
-    case __OTHR_SIDE : {
-      if ( Rop != st ) {
-        Rop = st;
+    case __FRONT : {
+      if ( Rfr != st ) {
+        Rfr = st;
         if ( st == __ON ) {
-          ROtherPanel.turnOn();
-          _L_VO_ON;
+          RFront.turnOn();
+          _L_FT_ON;
         } else {
-          ROtherPanel.turnOff();
-          _L_VO_OFF;
+          RFront.turnOff();
+          _L_FT_OFF;
         }
         mod = 1;
       }
@@ -676,6 +729,7 @@ void  Relay_manager( int ch , int st ) {
       aTHA = sensors.getTempC( THambnt );
       time_amb = __RESET;
     }
+    if ( aTHC > mTHC ) mTHC = aTHC;
     if ( aTHV > mTHV ) mTHV = aTHV;
     if ( aTHE > mTHE ) mTHE = aTHE;
   }
@@ -707,6 +761,8 @@ void  Relay_manager( int ch , int st ) {
     aTHV /= (float)TH_AVERAGE;
     aTHE /= (float)TH_AVERAGE;
 
+    aTHC = cpu->readCelsius();
+
     if ( AutoInit == __ON ) {
       THDrv_s[ iddrv ] = aTHV -oTHV;
       for( int a = 0; a < DRV_AVERAGE ; a++ ) {
@@ -723,8 +779,9 @@ void  Relay_manager( int ch , int st ) {
     if ( ++iddrv >= DRV_AVERAGE )
       iddrv = 0;
       
-    if ( aTHV > mTHV ) mTHV = aTHV;
     if ( aTHE > mTHE ) mTHE = aTHE;
+    if ( aTHV > mTHV ) mTHV = aTHV;
+    if ( aTHC > mTHC ) mTHC = aTHC;
   }
 
 #endif
@@ -732,29 +789,23 @@ void  Relay_manager( int ch , int st ) {
 void  Thrm_controller( void ) {
   if ( cycles < 15 ) {
     AutoInit = __OFF;
-  } else {
-/*    if ( AutoInit == __OFF ) {
-       Force = 0;
-      VEnable = 0;
-      MEnable = 0;
-      OEnable = 0;
-      NEnable = 0;
-      SForce = 0;
-    }
-*/      
+  } 
+  else {
+    
     AutoInit = __ON;
-//    _L_CNTR_INIT;
   }
 
   if ( AutoInit == __ON ) {
     if ( ! Force  ) {
       Controller = __ON;
-    } else {
+    }
+	else {
       Controller = __OFF;
     }
       
     if ( Controller == __ON ) {
       Relay_manager( __NOT_USED , __OFF );
+/*
       //  ----------------------------------------  TH Video
       if ( aTHV > THV_ACTIVATION ) {
         if ( VEnable == __ENABLE ) Relay_manager( __VIDEO , __ON );
@@ -767,40 +818,64 @@ void  Thrm_controller( void ) {
   
       //  ----------------------------------------  TH Environment
       if ( aTHE > THE_ACTIVATION ) {
-        if ( MEnable == __ENABLE ) Relay_manager( __MAIN_SIDE , __ON );
-        if ( OEnable == __ENABLE ) Relay_manager( __OTHR_SIDE , __ON );
+        if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
+        if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __ON );
       }
       else if ( aTHV > ( ( THV_DEACTIVATION + THV_ACTIVATION ) / 2 ) ) {
-        if ( MEnable == __ENABLE ) Relay_manager( __MAIN_SIDE , __ON );
+        if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
       }
       else {
         if ( ( aTHE < THE_ACTIVATION ) && ( aTHV < THV_ACTIVATION ) ) {
-          if ( OEnable == __ENABLE ) Relay_manager( __OTHR_SIDE , __OFF );
+          if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __OFF );
         }
         if ( aTHE < THE_DEACTIVATION ) {
-          if ( MEnable == __ENABLE ) Relay_manager( __MAIN_SIDE , __OFF );
+          if ( REnable == __ENABLE ) Relay_manager( __REAR , __OFF );
         }
       }
-    }
+ */
+	//  ----------------------------------------  TH Environment
+		if ( aTHE > THE_ACTIVATION ) {
+			if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __ON );
+		}
+		else if ( aTHE < THE_DEACTIVATION ) {
+			if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __OFF );
+		}
+		
+	//  ----------------------------------------  TH Video
+		if ( aTHV > THV_ACTIVATION ) {
+			if ( VEnable == __ENABLE ) Relay_manager( __VIDEO , __ON );
+		}
+		else if ( aTHV < THV_DEACTIVATION ) {
+			if ( FEnable == __ENABLE ) Relay_manager( __VIDEO , __OFF );
+		}
+		
+	//  ----------------------------------------  TH CPU
+		if ( aTHC > THC_ACTIVATION ) {
+			if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
+		}
+		else if ( aTHC < THC_DEACTIVATION ) {
+			if ( REnable == __ENABLE ) Relay_manager( __REAR , __OFF );
+		}
+	}
     else {
       if ( Force ) {
         Relay_manager( __VIDEO , __ON );
-        Relay_manager( __MAIN_SIDE , __ON );
-        Relay_manager( __OTHR_SIDE , __ON );
+        Relay_manager( __REAR , __ON );
+        Relay_manager( __FRONT , __ON );
         Relay_manager( __NOT_USED , __ON );
       }
       if ( SForce ) {
         Relay_manager( __VIDEO , __OFF );
-        Relay_manager( __MAIN_SIDE , __OFF );
-        Relay_manager( __OTHR_SIDE , __OFF );
+        Relay_manager( __REAR , __OFF );
+        Relay_manager( __FRONT , __OFF );
         Relay_manager( __NOT_USED , __OFF );
       }
     }
   } /* else {
     Force = 1;
     Relay_manager( __VIDEO , __ON );
-    Relay_manager( __MAIN_SIDE , __ON );
-    Relay_manager( __OTHR_SIDE , __ON );
+    Relay_manager( __REAR , __ON );
+    Relay_manager( __FRONT , __ON );
     Relay_manager( __NOT_USED , __ON );
   } */
 }
@@ -837,8 +912,8 @@ void checkSer( void ) {
       case 'A': {
          Force = 0;
         VEnable = 0;
-        MEnable = 0;
-        OEnable = 0;
+        REnable = 0;
+        FEnable = 0;
         NEnable = 0;
         SForce = 0;
 
@@ -847,10 +922,10 @@ void checkSer( void ) {
       case 'f': {
         VEnable = __DISABLE;
         Relay_manager( __VIDEO , __OFF );
-        MEnable = __DISABLE;
-        Relay_manager( __MAIN_SIDE , __OFF );
-        OEnable = __DISABLE;
-        Relay_manager( __OTHR_SIDE , __OFF );
+        REnable = __DISABLE;
+        Relay_manager( __REAR , __OFF );
+        FEnable = __DISABLE;
+        Relay_manager( __FRONT , __OFF );
 
         break;
       }
@@ -870,19 +945,19 @@ void checkSer( void ) {
       }
       case 'M':
       case 'm': {
-        if ( inByte == 'M' ) MEnable = __ENABLE;
+        if ( inByte == 'M' ) REnable = __ENABLE;
         if ( inByte == 'm' ) {
-          Relay_manager( __MAIN_SIDE , __OFF );
-          MEnable = __DISABLE;
+          Relay_manager( __REAR , __OFF );
+          REnable = __DISABLE;
         }
         break;
       }
       case 'O':
       case 'o': {
-        if ( inByte == 'O' ) OEnable = __ENABLE;
+        if ( inByte == 'O' ) FEnable = __ENABLE;
         if ( inByte == 'o' ) {
-          Relay_manager( __OTHR_SIDE , __OFF );
-          OEnable = __DISABLE;
+          Relay_manager( __FRONT , __OFF );
+          FEnable = __DISABLE;
         }
         break;
       }
@@ -919,40 +994,40 @@ void LedCntr( void ) {
   
   if ( VEnable == __DISABLE ) {
     if ( nrun % 2 )
-        _L_VV_DIS;
+        _L_FV_DIS;
       else
-        _L_VV_OFF;
+        _L_FV_OFF;
   } else {
     if ( Rvd == __OFF ) {
-      _L_VV_OFF;
+      _L_FV_OFF;
     } else {
-      _L_VV_ON;
+      _L_FV_ON;
     }
   }
   
-  if ( MEnable == __DISABLE ) {
+  if ( REnable == __DISABLE ) {
     if ( nrun % 2 )
-        _L_VM_DIS;
+        _L_FF_DIS;
       else
-        _L_VM_OFF;
+        _L_FF_OFF;
   } else {
-    if ( Rmp == __OFF ) {
-      _L_VM_OFF;
+    if ( Rrr == __OFF ) {
+      _L_FF_OFF;
     } else {
-      _L_VM_ON;
+      _L_FF_ON;
     }
   }
 
-  if ( OEnable == __DISABLE ) {
+  if ( FEnable == __DISABLE ) {
     if ( nrun % 2 )
-        _L_VO_DIS;
+        _L_FT_DIS;
       else
-        _L_VO_OFF;
+        _L_FT_OFF;
   } else {
-    if ( Rop == __OFF ) {
-      _L_VO_OFF;
+    if ( Rfr == __OFF ) {
+      _L_FT_OFF;
     } else {
-      _L_VO_ON;
+      _L_FT_ON;
     }
   }
 
@@ -961,21 +1036,22 @@ void LedCntr( void ) {
   else {
     if ( nrun % 2 ) {
       _L_CNTR_MANU;
-      _L_VM_ON;
-      _L_VO_ON;
-      _L_VV_ON;
+      _L_FF_ON;
+      _L_FT_ON;
+      _L_FV_ON;
     } else {
       _L_CNTR_OFF;
-      _L_VM_OFF;
-      _L_VO_OFF;
-      _L_VV_OFF;
+      _L_FF_OFF;
+      _L_FT_OFF;
+      _L_FV_OFF;
     }
   }
 
   if ( AutoInit == __ON ) {
-    set_ls_temp( _LN_SV , aTHV );
-    set_ls_temp( _LN_SE , aTHE );
     set_ls_temp( _LN_SA , aTHA );
+    set_ls_temp( _LN_SE , aTHE );
+    set_ls_temp( _LN_SV , aTHV );
+    set_ls_temp( _LN_SC , aTHC );
     
   } else {
     if ( nrun % 2 )
@@ -1043,8 +1119,8 @@ void setup(void) {
 
   
   RVideo.begin();
-  RMainPanel.begin();
-  ROtherPanel.begin();
+  RRear.begin();
+  RFront.begin();
 
   delay( 1000 );
 
@@ -1167,6 +1243,7 @@ void setup(void) {
     aTHV = sensors.getTempC( THvideo );
     aTHE = sensors.getTempC( THenvrm );
     aTHA = sensors.getTempC( THambnt );
+    aTHC = cpu->readCelsius();
     avg_reset();
   } else {
     if ( __TERMINAL != __PLOT ) {
