@@ -17,13 +17,14 @@
 #include <Thermistor.h>
 #include <NTC_Thermistor.h>
 #include <SmoothThermistor.h>
+#include <AverageThermistor.h>
 
 #include "Relay.h"
 #include "ArrbotMonitor.h"
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.9-031"
+#define RFC_VERSION         "1.9-047"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -37,7 +38,7 @@ FASTLED_USING_NAMESPACE
 #define __TTTERM      1
 #define __PLOT        2
 
-#define __TERMINAL    __TTTERM
+#define __TERMINAL    __PLOT
 
 #if ( __TERMINAL == __INTERNAL )
   byte __SCROLL = __ON;
@@ -81,19 +82,6 @@ int Controller = __ON;
 
 byte delta = __OFF;
 
-
-//  ------------------------------------------------------------------- ANALOG SENSOR DEFINES
-
-#define SENSOR_PIN              A1
-#define REFERENCE_RESISTANCE    10000
-#define NOMINAL_RESISTANCE      10000
-#define NOMINAL_TEMPERATURE     25.5
-#define B_VALUE                 3950
-#define SMOOTHING_FACTOR        10
-
-Thermistor* originThermistor = new NTC_Thermistor( SENSOR_PIN, REFERENCE_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, B_VALUE );
-Thermistor* cpu = new SmoothThermistor( originThermistor , SMOOTHING_FACTOR );
-
 //  ------------------------------------------------------------------- DIGITAL SENSOR DEFINES
 #define ONE_WIRE_BUS  18
 #define SERIAL_DIGIT  2
@@ -106,10 +94,19 @@ Thermistor* cpu = new SmoothThermistor( originThermistor , SMOOTHING_FACTOR );
 #define __READING     __NEW
 
 #if ( __READING == __OLD )
-  #define __RESOLUTION  9
+  #if ( __TERMINAL == __PLOT )
+    #define __RESOLUTION  12
+  #else
+    #define __RESOLUTION  9
+  #endif
   #define __AVG_READ    4
+  
 #elif ( __READING == __NEW )
-  #define __RESOLUTION  11
+  #if ( __TERMINAL == __PLOT )
+    #define __RESOLUTION  12
+  #else
+    #define __RESOLUTION  11
+  #endif
 #endif
 
 #if ( __TERMINAL == __PLOT )
@@ -120,8 +117,18 @@ Thermistor* cpu = new SmoothThermistor( originThermistor , SMOOTHING_FACTOR );
 
 #define __ERROR_CHECK   __ENABLE
 
-#define TH_AVERAGE  20
-#define DRV_AVERAGE 20
+#define __THERMAL_SMOOTH_FACTOR       20
+#define __DERIVATIVE_SMOOTH_FACTOR    20
+
+#if ( __TERMINAL == __PLOT )
+  #define TH_AVERAGE        __THERMAL_SMOOTH_FACTOR
+  #define TH_ANAL_AVERAGE   __THERMAL_SMOOTH_FACTOR
+  #define DRV_AVERAGE       __DERIVATIVE_SMOOTH_FACTOR
+#else 
+  #define TH_AVERAGE        ( __THERMAL_SMOOTH_FACTOR / 2 )
+  #define TH_ANAL_AVERAGE   ( __THERMAL_SMOOTH_FACTOR )
+  #define DRV_AVERAGE       ( __DERIVATIVE_SMOOTH_FACTOR / 2 )
+#endif
 
 #define DRV_TH      5
 
@@ -149,6 +156,9 @@ int c_Dval = 0;
 float THA_s[ TH_AVERAGE ];
 float THV_s[ TH_AVERAGE ];
 float THE_s[ TH_AVERAGE ];
+float THEDrv_s[ DRV_AVERAGE ];
+float THVDrv_s[ DRV_AVERAGE ];
+float THCDrv_s[ DRV_AVERAGE ];
 float THDrv_s[ DRV_AVERAGE ];
 
 float aTHA = 0.0;
@@ -156,29 +166,53 @@ float aTHE = 0.0;
 float aTHV = 0.0;
 float aTHC = 0.0;
 
+float aTHEDrv = 0.0;
+float aTHVDrv = 0.0;
+float aTHCDrv = 0.0;
 float aTHDrv = 0.0;
 
 float oTHE = 0.0;
 float oTHV = 0.0;
 float oTHC = 0.0;
+float oTHDrv = 0.0;
 
 float mTHC = 0.0;
 float mTHV = 0.0;
 float mTHE = 0.0;
 
-    //  -------------------------------------------- LED REFERENCE VALUE
+//  ------------------------------------------------------------------- ANALOG SENSOR DEFINES
+
+#ifdef ARDUINO_SAM_DUE
+  #define __MAX_ANALOG_RES      12
+#else
+  #define __MAX_ANALOG_RES      10
+#endif
+
+#define SENSOR_PIN              A1
+#define REFERENCE_RESISTANCE    10000
+#define NOMINAL_RESISTANCE      10000
+#define NOMINAL_TEMPERATURE     25.5
+#define B_VALUE                 3950
+#define SMOOTHING_FACTOR        TH_ANAL_AVERAGE
+
+Thermistor* oCPU = new NTC_Thermistor( SENSOR_PIN, REFERENCE_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, B_VALUE );
+Thermistor* cpu = new AverageThermistor( oCPU , TH_ANAL_AVERAGE , 1 );
+//Thermistor* oCPU = new NTC_Thermistor( SENSOR_PIN, REFERENCE_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, B_VALUE );
+//Thermistor* cpu  = new SmoothThermistor( oCPU , SMOOTHING_FACTOR );
+
+//  ------------------------------------------------------------------- LED REFERENCE VALUE
 
 #define THA_MAX     40.0
 #define THA_MIN     20.0
 
 #define THE_MAX     ( aTHA + 20.0 )
-#define THE_MIN     aTHA
+#define THE_MIN     ( aTHA + 5 )
 
-#define THV_MAX     55.0
-#define THV_MIN     30.0
+#define THV_MAX     60.0
+#define THV_MIN     40.0
 
-#define THC_MAX     50.0
-#define THC_MIN     25.0
+#define THC_MAX     55.0
+#define THC_MIN     30.0
 
 #define __EQUAL_LIMIT   600    //  uguali tra i vari sensori                   600 = 5 minuto
 #define __SAME_LIMIT    1200   //  stessa lettura sul singolo sensore         1200 = 10 minuti
@@ -252,8 +286,8 @@ void  SensErrorCheck( void ) {
 #define RELAY_DLY   250
 
 #define __VIDEO     5
-#define __REAR 7
-#define __FRONT 4
+#define __REAR      4   // 7
+#define __FRONT     7   // 4
 #define __NOT_USED  6
 
 #define __NORMALY_OPENED  false
@@ -374,6 +408,9 @@ void  set_ls_temp( byte led , float temp ) {
   } else if ( led == _LN_SA ) {
     rv = (int)fmap( temp , THA_MIN , THA_MAX , 0.0 , _R_MAX );
     bv = (int)fmap( temp , THA_MIN , THA_MAX , 0.0 , _B_MAX );
+  } else if ( led == _LN_SC ) {
+    rv = (int)fmap( temp , THC_MIN , THC_MAX , 0.0 , _R_MAX );
+    bv = (int)fmap( temp , THC_MIN , THC_MAX , 0.0 , _B_MAX );
   }
   bv = 255 - bv; 
   if ( rv < 0 ) rv = 0;
@@ -469,6 +506,12 @@ void avg_reset( void ) {
   for( int c = 0 ; c < TH_AVERAGE ; c++ )
     THV_s[c] = aTHV;
   for( int c = 0 ; c < DRV_AVERAGE ; c++ )
+    THEDrv_s[c] = 0.0;
+  for( int c = 0 ; c < DRV_AVERAGE ; c++ )
+    THVDrv_s[c] = 0.0;
+  for( int c = 0 ; c < DRV_AVERAGE ; c++ )
+    THCDrv_s[c] = 0.0;
+  for( int c = 0 ; c < DRV_AVERAGE ; c++ )
     THDrv_s[c] = 0.0;
 
   aTHDrv = 0.0;
@@ -550,21 +593,27 @@ void SerDebug( void ) {
           Serial.println("\e[1K");
           Serial.print("\e[1A");
         }
-        Serial.print(" CH A/dE/dV/dC: ");
+        
+        Serial.print(" A/DrvE/DrvV/DrvC/DrvTOT: ");
         __BOLD;
         Serial.print(aTHA , SERIAL_DIGIT );
         __NORMAL;
         Serial.print("/");
         __BOLD;
-        Serial.print(aTHE - aTHA , SERIAL_DIGIT );
+        Serial.print(aTHEDrv * 1000, SERIAL_DIGIT );
         __NORMAL;
         Serial.print("/");
         __BOLD;
-        Serial.print(aTHV - aTHA , SERIAL_DIGIT );
+        Serial.print(aTHVDrv * 1000 , SERIAL_DIGIT );
         __NORMAL;
         Serial.print("/");
         __BOLD;
-        Serial.print(aTHC - aTHA , SERIAL_DIGIT );
+        Serial.print(aTHCDrv * 1000 , SERIAL_DIGIT );
+        __NORMAL;
+        Serial.print("/");
+        __BOLD;
+        Serial.print(aTHDrv * 1000 , SERIAL_DIGIT );
+
         __NORMAL;
         Serial.print(" - Eq/Sm-a-e-v-c: ");
         __BOLD;
@@ -737,7 +786,6 @@ void  Relay_manager( int ch , int st ) {
 #elif ( __READING == __NEW ) 
 
   void avg_reading( void ) {
-    oTHV = aTHV;
     sensors.requestTemperatures();
     THV_s[ id ] = sensors.getTempC( THvideo );
     THE_s[ id ] = sensors.getTempC( THenvrm );
@@ -762,23 +810,50 @@ void  Relay_manager( int ch , int st ) {
     aTHE /= (float)TH_AVERAGE;
 
     aTHC = cpu->readCelsius();
-
+//  --------------------------------------- Drv
     if ( AutoInit == __ON ) {
-      THDrv_s[ iddrv ] = aTHV -oTHV;
+      THEDrv_s[ iddrv ] = aTHE - oTHE;
+      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+        aTHEDrv += THEDrv_s[a];
+      }
+      aTHEDrv /= (float)DRV_AVERAGE;
+      
+      THVDrv_s[ iddrv ] = aTHV - oTHV;
+      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+        aTHVDrv += THVDrv_s[a];
+      }
+      aTHVDrv /= (float)DRV_AVERAGE;
+      
+      THCDrv_s[ iddrv ] = aTHC - oTHC;
+      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+        aTHCDrv += THCDrv_s[a];
+      }
+      aTHCDrv /= (float)DRV_AVERAGE;
+      
+      THDrv_s[ iddrv ] = ( (float)( aTHEDrv + aTHVDrv + aTHCDrv ) / 3.0 ) - oTHDrv;
       for( int a = 0; a < DRV_AVERAGE ; a++ ) {
         aTHDrv += THDrv_s[a];
       }
       aTHDrv /= (float)DRV_AVERAGE;
-    } else {
+
+      oTHE = aTHE;
+      oTHV = aTHV;
+      oTHC = aTHC;
+      oTHDrv = aTHDrv;
+
+    }
+/*    else {
       iddrv = 0;
       aTHDrv = 0;
     }
-    
+*/    
+//  ---------------------------------------  Indexes: increments and limits
     if ( ++id >= TH_AVERAGE )
       id = 0;
     if ( ++iddrv >= DRV_AVERAGE )
       iddrv = 0;
-      
+
+//  ---------------------------------------  MAX values update 
     if ( aTHE > mTHE ) mTHE = aTHE;
     if ( aTHV > mTHV ) mTHV = aTHV;
     if ( aTHC > mTHC ) mTHC = aTHC;
@@ -1170,7 +1245,7 @@ void setup(void) {
     else
       sensors.getResolution(THambnt);
     sensors.getDeviceCount();
-    _L_SET( 7 , _L_0XFF , _L_0XFF , 0 );
+    _L_SET( 8 , _L_0XFF , _L_0XFF , 0 );
     _L_UPDATE;
     delay( 500 );
 
@@ -1201,7 +1276,7 @@ void setup(void) {
     }
     else
       sensors.getResolution(THvideo);
-    _L_SET( 6 , _L_0XFF , _L_0XFF , 0 );
+    _L_SET( 7 , _L_0XFF , _L_0XFF , 0 );
     _L_UPDATE;
     delay( 500 );
 
@@ -1232,8 +1307,40 @@ void setup(void) {
     }
     else
       sensors.getResolution(THenvrm);
+    _L_SET( 6 , _L_0XFF , _L_0XFF , 0 );
+    _L_UPDATE;
+    delay( 500 );
+
+    pinMode( A1 , INPUT );
+    if ( __TERMINAL != __PLOT ) {
+      Serial.println();
+      Serial.print("Thermal NTC Sensor Initializing [103AQ3]...");
+      if ( analogRead( A1 ) > 20 ) {
+        Serial.print("Found!");
+      }
+      else {
+        Serial.print("NOT found!");
+        for ( int i = 0 ; i < sensors.getDeviceCount() ; i++ ) {
+          _L_SET( ( 8 - i ) , _L_0XFF , _L_0XFF , 0 );
+          _L_UPDATE;
+          delay( 500 );
+        }
+        _L_ON_ON;
+        _L_UPDATE;
+        delay( 3000 );
+        bigFail();
+      }
+      Serial.println();
+      Serial.print("  Current analog read resolution: ");
+      Serial.print( __MAX_ANALOG_RES );
+      Serial.println();
+      Serial.print("  pinMode A1: INPUT: ");
+      Serial.print( analogRead( A1 ) ,HEX );
+      Serial.println();
+    }
     _L_SET( 5 , _L_0XFF , _L_0XFF , 0 );
     _L_UPDATE;
+
     delay( 3000 );
     _L_ON_ON;
     _L_UPDATE;
@@ -1243,7 +1350,7 @@ void setup(void) {
     aTHV = sensors.getTempC( THvideo );
     aTHE = sensors.getTempC( THenvrm );
     aTHA = sensors.getTempC( THambnt );
-    aTHC = cpu->readCelsius();
+//    aTHC = cpu->readCelsius();
     avg_reset();
   } else {
     if ( __TERMINAL != __PLOT ) {
@@ -1271,6 +1378,7 @@ void setup(void) {
   }
   if ( __TERMINAL != __PLOT )
     showHelp();
+  _L_SET( 8 , 0 , 0 , 0 );
   _L_SET( 7 , 0 , 0 , 0 );
   _L_SET( 6 , 0 , 0 , 0 );
   _L_SET( 5 , 0 , 0 , 0 );
