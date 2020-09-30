@@ -10,6 +10,20 @@
  *  @Arduino Due
  */
 
+/*
+- Posizione del cursore:
+    \033[<L>;<C>H
+      mette il cursore alla linea L e colonna C.
+- Muove il cursore su N linee:
+    \033[<N>A
+- Muove il cursore giù N linee:
+    \033[<N>B
+- Muove il cursore avanti N colonne:
+    \033[<N>C
+- Muove il cursore indietro N colonne:
+    \033[<N>D
+*/
+
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <FastLED.h>
@@ -24,7 +38,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.9-047"
+#define RFC_VERSION         "1.10-043"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -32,32 +46,89 @@ FASTLED_USING_NAMESPACE
 #define __FOFF      -1
 #define __RESET     -1
 
-//void(* Riavvia)(void) = 0;
-
 #define __INTERNAL    0
 #define __TTTERM      1
 #define __PLOT        2
+#define __MONITOR     3
 
-#define __TERMINAL    __PLOT
+#define __TEMP        10
+#define __DRVS        11
+#define __LINE        12
+#define __TABLE       13
+
+#define __TERMINAL    __TTTERM
+
+#define __CONTENT     __TABLE
+
 
 #if ( __TERMINAL == __INTERNAL )
+  # undef __CONTENT
+  #define __CONTENT     __LINE
   byte __SCROLL = __ON;
+#elif ( __TERMINAL == __MONITOR )
+  # undef __CONTENT
+  #define __CONTENT     __TABLE
+  byte __SCROLL = __OFF;
 #else
   byte __SCROLL = __OFF;
 #endif
 
-#define __NORMAL      if ( __TERMINAL == __TTTERM ) Serial.print( "\e[0m" )
-#define __BOLD        if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
+#define __NORMAL                if ( __TERMINAL == __TTTERM ) Serial.print( "\e[0m" )
+#define __BOLD                  if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
+#define __BLANK                 Serial.print( "   " )
+
+#define __SERPRINT( a )         Serial.print( a )
+#define __SERPRINT2( a , b )    Serial.print( a , b )
+                                
+#define __SERBOLD( a )          if ( __TERMINAL == __TTTERM ) \
+                                  Serial.print( "\e[1m" );    \
+                                Serial.print( a );            \
+                                if ( __TERMINAL == __TTTERM ) \
+                                  Serial.print( "\e[0m" );    \
+                                
+#define __SERBOLD2( a , b )     if ( __TERMINAL == __TTTERM ) \
+                                  Serial.print( "\e[1m" );    \
+                                Serial.print( a , b );        \
+                                if ( __TERMINAL == __TTTERM ) \
+                                  Serial.print( "\e[0m" );    \
+// Serial.print BLink if (a) is Higher than (b)
+#define __SERBLH( a, b )  1
+
+// Serial.print BLink if (a) is Lower than (b)
+#define __SERBLL( a, b )  1
+
+// Serial.print BLink if (a) is Equal to (b) then (c)
+#define __SERBLE( a, b, c)        if ( a ==  b ) {      \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERPRINT( c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERBOLD( c );   \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
+
+
+// Serial.print Bold if (a) is Higher than (b)
+#define __SERBH( a, b )   1
+
+// Serial.print Bold if (a) is Lower than (b)
+#define __SERBL( a, b )   1
+
+// Serial.print Bold if (a) is Equal to (b)
+#define __SERBE( a, b )   1
 
 //  ------------------------------------------------------------------- RFC DEFINES
 #define THE_ACTIVATION      ( aTHA + 12.0 )
 #define THE_DEACTIVATION    ( aTHA + 7.0 )
-#define THV_ACTIVATION      45.0
-#define THV_DEACTIVATION    40.0
-#define THC_ACTIVATION      42.0
-#define THC_DEACTIVATION    40.0
+#define THV_ACTIVATION      ( aTHA + 25.0 ) // 45.0
+#define THV_DEACTIVATION    ( aTHA + 20.0 ) // 40.0
+#define THC_ACTIVATION      ( aTHA + 25.0 ) // 42.0
+#define THC_DEACTIVATION    ( aTHA + 15.0 ) // 40.0
 
-#define __ERRORE_STOP       while(1)
+#define __ERROR_STOP        while(1)
 
 unsigned long               cycles;
 unsigned long               nrun = 0;
@@ -117,8 +188,8 @@ byte delta = __OFF;
 
 #define __ERROR_CHECK   __ENABLE
 
-#define __THERMAL_SMOOTH_FACTOR       20
-#define __DERIVATIVE_SMOOTH_FACTOR    20
+#define __THERMAL_SMOOTH_FACTOR       30
+#define __DERIVATIVE_SMOOTH_FACTOR    30
 
 #if ( __TERMINAL == __PLOT )
   #define TH_AVERAGE        __THERMAL_SMOOTH_FACTOR
@@ -154,8 +225,10 @@ int Dval = 0;
 int c_Dval = 0;
 
 float THA_s[ TH_AVERAGE ];
-float THV_s[ TH_AVERAGE ];
 float THE_s[ TH_AVERAGE ];
+float THV_s[ TH_AVERAGE ];
+float THC_s[ TH_AVERAGE ];
+
 float THEDrv_s[ DRV_AVERAGE ];
 float THVDrv_s[ DRV_AVERAGE ];
 float THCDrv_s[ DRV_AVERAGE ];
@@ -176,9 +249,9 @@ float oTHV = 0.0;
 float oTHC = 0.0;
 float oTHDrv = 0.0;
 
-float mTHC = 0.0;
-float mTHV = 0.0;
 float mTHE = 0.0;
+float mTHV = 0.0;
+float mTHC = 0.0;
 
 //  ------------------------------------------------------------------- ANALOG SENSOR DEFINES
 
@@ -197,7 +270,6 @@ float mTHE = 0.0;
 
 Thermistor* oCPU = new NTC_Thermistor( SENSOR_PIN, REFERENCE_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, B_VALUE );
 Thermistor* cpu = new AverageThermistor( oCPU , TH_ANAL_AVERAGE , 1 );
-//Thermistor* oCPU = new NTC_Thermistor( SENSOR_PIN, REFERENCE_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, B_VALUE );
 //Thermistor* cpu  = new SmoothThermistor( oCPU , SMOOTHING_FACTOR );
 
 //  ------------------------------------------------------------------- LED REFERENCE VALUE
@@ -467,32 +539,34 @@ void  printStatus( void ) {
     else 
       Serial.print( "d" );
   }
-  else {
-    Serial.print("Control: ");
-    if ( AutoInit == __OFF )
-      Serial.print("INIT   ");
-    else {
-      if ( Controller == __ON ) 
-        Serial.print("\e[1mAUTO\e[0m   ");
-      else
-        Serial.print("\e[1mMANUAL\e[0m ");
+  else if( __TERMINAL == __TTTERM ){
+    if( __TERMINAL == __TTTERM ) {
+      Serial.print("Control: ");
+      if ( AutoInit == __OFF )
+        Serial.print("INIT   ");
+      else {
+        if ( Controller == __ON ) 
+          Serial.print("\e[1mAUTO\e[0m   ");
+        else
+          Serial.print("\e[1mMANUAL\e[0m ");
+      }
+      if ( VEnable == __ENABLE )
+        Serial.print( Rvd?"\e[1mV\e[0m":"-" );
+      else 
+        Serial.print( "\e[1md\e[1m" );  
+      if ( REnable == __ENABLE )  
+        Serial.print( Rrr?"\e[1mM\e[0m":"-" );
+      else 
+        Serial.print( "\e[1md\e[0m" );  
+      if ( FEnable == __ENABLE )
+        Serial.print( Rfr?"\e[1mO\e[0m":"-" );
+      else 
+        Serial.print( "\e[1md\e[0m" );  
+      if ( NEnable == __ENABLE )
+        Serial.print( Rnu?"\e[1mN\e[0m":"-" );
+      else 
+        Serial.print( "\e[1md\e[0m" );
     }
-    if ( VEnable == __ENABLE )
-      Serial.print( Rvd?"\e[1mV\e[0m":"-" );
-    else 
-      Serial.print( "\e[1md\e[1m" );  
-    if ( REnable == __ENABLE )  
-      Serial.print( Rrr?"\e[1mM\e[0m":"-" );
-    else 
-      Serial.print( "\e[1md\e[0m" );  
-    if ( FEnable == __ENABLE )
-      Serial.print( Rfr?"\e[1mO\e[0m":"-" );
-    else 
-      Serial.print( "\e[1md\e[0m" );  
-    if ( NEnable == __ENABLE )
-      Serial.print( Rnu?"\e[1mN\e[0m":"-" );
-    else 
-      Serial.print( "\e[1md\e[0m" );
   }
 }
 
@@ -515,13 +589,17 @@ void avg_reset( void ) {
     THDrv_s[c] = 0.0;
 
   aTHDrv = 0.0;
+  oTHE = aTHE;
+  oTHV = aTHV;
+  oTHC = aTHC;
+  oTHDrv = aTHDrv;
 }
 
 
 void bigFail( void ) {
   byte r = 0;
   _ALL_LED_OFF;
-  __ERRORE_STOP {
+  __ERROR_STOP {
     checkSer();
     _L_ERROR_ON( _LN_ON );
     _L_ERROR_ON( _LN_CNTR );
@@ -537,126 +615,327 @@ void bigFail( void ) {
 }
 
 
+void printLine( void )  {
+  if ( delta == __OFF ) {
+    if ( Texe ) {
+      if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
+        Serial.println("\e[1K");
+        Serial.print("\e[1A");
+      }
+
+      Serial.print(" CH A/E/V/C: ");
+      __BOLD;
+      Serial.print(aTHA , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(aTHE , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(aTHV , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(aTHC , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print(" - Der_v: ");
+      __BOLD;
+      Serial.print( aTHDrv * 1000 , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print( "/" );
+      Serial.print( Dval );
+      Serial.print( "/" );
+      Serial.print( c_Dval );
+
+      __NORMAL;
+      Serial.print(" - Me/Mv/Mc: ");
+      __BOLD;
+      Serial.print(mTHE , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(mTHV , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(mTHC , SERIAL_DIGIT );
+
+      __NORMAL;
+      Serial.print("  -  ");
+      if ( hours < 10 )
+        Serial.print("Up time: 0");
+      else
+        Serial.print("Up time: ");
+      Serial.print(hours);
+      if ( minutes < 10 )
+        Serial.print(":0");
+      else
+        Serial.print(":");
+      Serial.print(minutes);
+      if ( seconds < 10 )
+        Serial.print(":0");
+      else
+        Serial.print(":");
+      Serial.print(seconds);
+
+      __NORMAL;
+      Serial.print("  -  ");
+      printStatus();
+      Serial.print( abs( Texe - RFC_DELAY ) < 2?" OK ":" NOT OK " );
+
+    }
+  }
+  else if ( delta == __ON ) {
+    if ( Texe ) {
+      if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
+        Serial.println("\e[1K");
+        Serial.print("\e[1A");
+      }
+      
+      Serial.print(" A/DrvE/DrvV/DrvC/DrvTOT: ");
+      __BOLD;
+      Serial.print(aTHA , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(aTHEDrv * 1000, SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(aTHVDrv * 1000 , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(aTHCDrv * 1000 , SERIAL_DIGIT );
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(aTHDrv * 1000 , SERIAL_DIGIT );
+
+      __NORMAL;
+      Serial.print(" - Eq/Sm-a-e-v-c: ");
+      __BOLD;
+      Serial.print(equal);
+      __NORMAL;
+      Serial.print("/");
+      __BOLD;
+      Serial.print(gsame);
+      Serial.print("-");
+      Serial.print(asame , 1);
+      Serial.print("-");
+      Serial.print(esame);
+      Serial.print("-");
+      Serial.print(vsame);
+      Serial.print("-");
+      Serial.print(csame);
+      __NORMAL;
+    }
+  }
+  if ( inHelp ) {
+    Serial.println();
+    showHelp();
+    inHelp = 0;
+  }
+}
+
+
+void printTable( void ) {
+  if ( inHelp ) {
+    Serial.println();
+    showHelp();
+    inHelp = 0;
+  }
+
+  if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
+    Serial.println("\e[1K");
+    Serial.print("\e[26A");
+  }
+
+  Serial.print("Proxima Fan Controller - Version: " );
+    Serial.print( RFC_VERSION );
+    Serial.print(" - Up time: ");
+    if ( hours < 10 )
+      Serial.print("0");
+    Serial.print(hours);
+    Serial.print(":");
+    if ( minutes < 10 )
+      Serial.print("0");
+    Serial.print(minutes);
+    Serial.print(":");
+    if ( seconds < 10 )
+      Serial.print("0");
+    Serial.print(seconds);
+  Serial.println();
+  Serial.println( "  !asyntote [gKript.org] 2020" );
+  Serial.println();
+
+  Serial.println("CONTROLLER:");
+    Serial.print("\tStatus: \t\t");
+    __SERBLE( AutoInit  , __OFF,   "Initialization")
+    else {
+      __SERBLE( Controller, __ON , "Automatic     ");
+      __SERBLE( Controller, __OFF, "MANUAL        ");
+    }
+    Serial.println();
+  Serial.println();
+
+  Serial.println("ROOM:");
+    Serial.print("\tTemperature: \t\t");
+      __SERBOLD2( aTHA , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - General Derivative:\t");
+      __SERBOLD2( ( aTHDrv * 1000 ) , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+  Serial.println();
+
+  Serial.print("CASE:");
+    Serial.print("\tFan status:\t\t");
+      if ( Rfr == __ON ) {
+        __SERBOLD( "ON ");
+      }
+      else {
+        __SERPRINT( "Off" );
+      }
+    Serial.println();
+    Serial.print("\tTh Activation:\t\t");
+      __SERPRINT2( THE_ACTIVATION , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Activation gap:\t");
+      __SERPRINT2( THE_ACTIVATION - aTHE , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+    Serial.print("\tTemperature:\t\t");
+      __SERBOLD2( aTHE , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Derivative:\t\t");
+      __SERPRINT2( ( aTHEDrv * 1000 ) , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+    Serial.print("\tTh Deactivation:\t");
+      __SERPRINT2( THE_DEACTIVATION , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Deactivation gap:\t");
+      __SERPRINT2( aTHE - THE_DEACTIVATION , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+  Serial.println();
+
+  Serial.print("VIDEO:");
+    Serial.print("\tFan status:\t\t");
+      if ( Rvd == __ON ) {
+        __SERBOLD( "ON ");
+      }
+      else {
+        __SERPRINT( "Off" );
+      }
+    Serial.println();
+    Serial.print("\tTh Activation:\t\t");
+      __SERPRINT2( THV_ACTIVATION , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Activation gap:\t");
+      __SERPRINT2( THV_ACTIVATION - aTHV , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+    Serial.print("\tTemperature:\t\t");
+      __SERBOLD2( aTHV , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Derivative:\t\t");
+      __SERPRINT2( ( aTHVDrv * 1000 ) , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+    Serial.print("\tTh Deactivation:\t");
+      __SERPRINT2( THV_DEACTIVATION , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Deactivation gap:\t");
+      __SERPRINT2( aTHV - THV_DEACTIVATION , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+  Serial.println();
+
+  Serial.print("CPU:");
+    Serial.print("\tFan status:\t\t");
+      if ( Rrr == __ON ) {
+        __SERBOLD( "ON ");
+      }
+      else {
+        __SERPRINT( "Off" );
+      }
+    Serial.println();
+    Serial.print("\tTh Activation:\t\t");
+      __SERPRINT2( THC_ACTIVATION , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Activation gap:\t");
+      __SERPRINT2( THC_ACTIVATION - aTHC , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+    Serial.print("\tTemperature:\t\t");
+      __SERBOLD2( aTHC , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Derivative:\t\t");
+      __SERPRINT2( ( aTHCDrv * 1000 ) , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+    Serial.print("\tTh Deactivation:\t");
+      __SERPRINT2( THC_DEACTIVATION , SERIAL_DIGIT );
+      Serial.print("\t");
+      Serial.print(" - Deactivation gap:\t");
+      __SERPRINT2( aTHC - THC_DEACTIVATION , SERIAL_DIGIT );
+      __BLANK;
+    Serial.println();
+    Serial.println();
+    
+    __SERPRINT( "\tInsert a valid command [h for help] : " );
+    if ( inByte )
+      __SERBOLD( char(inByte) );
+    __BLANK;
+    
+  Serial.println();
+}
+
+
 void SerDebug( void ) {
   if ( __TERMINAL != __PLOT ) {
-    if ( delta == __OFF ) {
-      if ( Texe ) {
-        if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
-          Serial.println("\e[1K");
-          Serial.print("\e[1A");
-        }
-        Serial.print(" CH A/E/V/C: ");
-        __BOLD;
-        Serial.print(aTHA , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(aTHE , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(aTHV , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(aTHC , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print(" - Der_v: ");
-        __BOLD;
-        Serial.print( aTHDrv * 1000 , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print( "/" );
-        Serial.print( Dval );
-        Serial.print( "/" );
-        Serial.print( c_Dval );
-        __NORMAL;
-        Serial.print(" - Me/Mv/Mc: ");
-        __BOLD;
-        Serial.print(mTHE , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(mTHV , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(mTHC , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("    -  ");
-        printStatus();
-        Serial.print( abs( Texe - RFC_DELAY ) < 2?" OK ":" NOT OK " );
-      }
+    if ( __CONTENT == __LINE ) {
+      printLine();
     }
-    else if ( delta == __ON ) {
-      if ( Texe ) {
-        if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
-          Serial.println("\e[1K");
-          Serial.print("\e[1A");
-        }
-        
-        Serial.print(" A/DrvE/DrvV/DrvC/DrvTOT: ");
-        __BOLD;
-        Serial.print(aTHA , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(aTHEDrv * 1000, SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(aTHVDrv * 1000 , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(aTHCDrv * 1000 , SERIAL_DIGIT );
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(aTHDrv * 1000 , SERIAL_DIGIT );
-
-        __NORMAL;
-        Serial.print(" - Eq/Sm-a-e-v-c: ");
-        __BOLD;
-        Serial.print(equal);
-        __NORMAL;
-        Serial.print("/");
-        __BOLD;
-        Serial.print(gsame);
-        Serial.print("-");
-        Serial.print(asame , 1);
-        Serial.print("-");
-        Serial.print(esame);
-        Serial.print("-");
-        Serial.print(vsame);
-        Serial.print("-");
-        Serial.print(csame);
-        __NORMAL;
-      }
+    else if ( __CONTENT == __TABLE ) {
+      printTable();
     }
-    if ( inHelp ) {
-      Serial.println();
-      showHelp();
-      inHelp = 0;
-    }
-    if ( __SCROLL == __ON )
-      Serial.println();
   }
   else {
     DISPLAY( RFC_VERSION );
 
-    MONITOR2( "Room" , aTHA );
-    MONITOR2( "Case" , aTHE );
-    MONITOR2( "Video" , aTHV );
-    MONITOR2( "Cpu" , aTHC );
+    #if __CONTENT == __TEMP 
+      MONITOR2( "Room" , aTHA );
+      MONITOR2( "Case" , aTHE );
+      MONITOR2( "Video" , aTHV );
+      MONITOR2( "Cpu" , aTHC );
 
-    DISPLAY2( "Room" , aTHA );
-    DISPLAY2( "Case" , aTHE );
-    DISPLAY2( "Video" , aTHV );
-    DISPLAY2( "Cpu" , aTHC );
-    DISPLAY2( "Derivative" , aTHDrv * 1000 );
+      DISPLAY2( "Room" , aTHA );
+      DISPLAY2( "Case" , aTHE );
+      DISPLAY2( "Video" , aTHV );
+      DISPLAY2( "Cpu" , aTHC );
+      DISPLAY2( "Derivative" , aTHDrv * 1000 );
+    #elif __CONTENT == __DRVS
+      if ( ( minutes > 0 ) || ( hours > 0 ) ) {
+        MONITOR2( "DrvE" , aTHEDrv * 1000 );
+        MONITOR2( "DrvV" , aTHVDrv * 1000 );
+        MONITOR2( "DrvC" , aTHCDrv * 1000 );
+        MONITOR2( "DrvTOT" , aTHDrv * 1000 );
+
+        DISPLAY2( "Room" , aTHA );
+        DISPLAY2( "Case" , aTHE );
+        DISPLAY2( "Video" , aTHV );
+        DISPLAY2( "Cpu" , aTHC );
+      }
+    #endif
 
     MONITOR_ENDL();
   }
+  if ( __SCROLL == __ON )
+    Serial.println();
 }
 
 
@@ -685,7 +964,8 @@ void  showHelp( void ) {
     Serial.println( "  O       It will enable the Other Panel Fan (default)" );
     Serial.println( "  o       It will disable the Other Panel Fan" );
     delay( 5000 );
-    Serial.println();
+    for ( int i = 0; i < 30; i++) 
+      Serial.println();
   }
   else
    Serial.println( "  Press h o H to get the commands list" );
@@ -789,14 +1069,16 @@ void  Relay_manager( int ch , int st ) {
     sensors.requestTemperatures();
     THV_s[ id ] = sensors.getTempC( THvideo );
     THE_s[ id ] = sensors.getTempC( THenvrm );
+    THC_s[ id ] = cpu->readCelsius();
     #if ( __AMB_AVERAGED == __YES )
       THA_s[ id ] = sensors.getTempC( THambnt );
     #else
       aTHA = sensors.getTempC( THambnt );
     #endif      
     for( int a = 0; a < TH_AVERAGE ; a++ ) {
-      aTHV += THV_s[a];
       aTHE += THE_s[a];
+      aTHV += THV_s[a];
+      aTHC += THC_s[a];
       #if ( __AMB_AVERAGED == __YES )
         aTHA += THA_s[a];
       #endif
@@ -806,10 +1088,10 @@ void  Relay_manager( int ch , int st ) {
     #else
       aTHA = sensors.getTempC( THambnt );
     #endif
-    aTHV /= (float)TH_AVERAGE;
     aTHE /= (float)TH_AVERAGE;
-
-    aTHC = cpu->readCelsius();
+    aTHV /= (float)TH_AVERAGE;
+    aTHC /= (float)TH_AVERAGE;
+    
 //  --------------------------------------- Drv
     if ( AutoInit == __ON ) {
       THEDrv_s[ iddrv ] = aTHE - oTHE;
@@ -842,11 +1124,11 @@ void  Relay_manager( int ch , int st ) {
       oTHDrv = aTHDrv;
 
     }
-/*    else {
+    else {
       iddrv = 0;
-      aTHDrv = 0;
+//      aTHDrv = 0;
     }
-*/    
+    
 //  ---------------------------------------  Indexes: increments and limits
     if ( ++id >= TH_AVERAGE )
       id = 0;
@@ -880,34 +1162,6 @@ void  Thrm_controller( void ) {
       
     if ( Controller == __ON ) {
       Relay_manager( __NOT_USED , __OFF );
-/*
-      //  ----------------------------------------  TH Video
-      if ( aTHV > THV_ACTIVATION ) {
-        if ( VEnable == __ENABLE ) Relay_manager( __VIDEO , __ON );
-      }
-      else {
-        if ( aTHV < THV_DEACTIVATION ) {
-          if ( VEnable == __ENABLE ) Relay_manager( __VIDEO , __OFF );
-        }
-      }
-  
-      //  ----------------------------------------  TH Environment
-      if ( aTHE > THE_ACTIVATION ) {
-        if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
-        if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __ON );
-      }
-      else if ( aTHV > ( ( THV_DEACTIVATION + THV_ACTIVATION ) / 2 ) ) {
-        if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
-      }
-      else {
-        if ( ( aTHE < THE_ACTIVATION ) && ( aTHV < THV_ACTIVATION ) ) {
-          if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __OFF );
-        }
-        if ( aTHE < THE_DEACTIVATION ) {
-          if ( REnable == __ENABLE ) Relay_manager( __REAR , __OFF );
-        }
-      }
- */
 	//  ----------------------------------------  TH Environment
 		if ( aTHE > THE_ACTIVATION ) {
 			if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __ON );
@@ -928,7 +1182,7 @@ void  Thrm_controller( void ) {
 		if ( aTHC > THC_ACTIVATION ) {
 			if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
 		}
-		else if ( aTHC < THC_DEACTIVATION ) {
+		else if ( ( aTHC < THC_DEACTIVATION ) && ( aTHV < THV_DEACTIVATION ) ) {
 			if ( REnable == __ENABLE ) Relay_manager( __REAR , __OFF );
 		}
 	}
@@ -1135,7 +1389,7 @@ void LedCntr( void ) {
         _L_CNTR_OFF;
    }
 
-  if ( AutoInit == __ON ) {
+  if ( ( minutes > 0 ) || ( hours > 0 ) ) {
     c_Dval = constrain( abs( aTHDrv  * 1000 ) , 0 , 60 );
     Dval = map( c_Dval , 0 , 60 , 0 , 255 );
     if ( c_Dval < 3 ) {
@@ -1178,6 +1432,7 @@ void setup(void) {
     if ( __TERMINAL != __INTERNAL ) {
       for( byte a = 0; a < 40 ; a++ )
         Serial.println();
+      Serial.print("\033[?25l");
       Serial.println( "\e[1J" );
       Serial.print("\e[2J");
     }
@@ -1385,7 +1640,14 @@ void setup(void) {
   _L_UPDATE;
   delay(2000);
   if ( __TERMINAL != __PLOT ) {
-    Serial.println( "" );
+    if ( __CONTENT == __TABLE ) {
+      for( byte a = 0; a < 40 ; a++ )
+        Serial.println();
+      Serial.println( "\e[1J" );
+      Serial.print("\e[2J");
+    }
+    else
+      Serial.println( "" );
   }
 }
 
