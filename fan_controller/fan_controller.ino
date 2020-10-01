@@ -1,5 +1,5 @@
 /*
- *  Reflection Fan Controller 
+ *  Reflection Fan contr 
  *    !V 2.x
  *    !GPL V3
  *    
@@ -38,7 +38,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.10-043"
+#define RFC_VERSION         "1.10-115"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -73,29 +73,114 @@ FASTLED_USING_NAMESPACE
   byte __SCROLL = __OFF;
 #endif
 
-#define __NORMAL                if ( __TERMINAL == __TTTERM ) Serial.print( "\e[0m" )
-#define __BOLD                  if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
-#define __BLANK                 Serial.print( "   " )
+#define __BLACK           30
+#define __RED             31
+#define __GREEN           32
+#define __YELLOW          33
+#define __BLUE            34
+#define __MAGENA          35
+#define __CYAN            36
+#define __WHITE           37
+#define __GRAY            90
+#define __BRIGHT_RED      91
+#define __BRIGHT_GREEN    92
+#define __BRIGHT_YELLOW   93
+#define __BRIGHT_BLUE     94
+#define __BRIGHT_MAGENTA  95
+#define __BRIGHT_CYAN     96
+#define __BRIGHT_WHITE    97
 
-#define __SERPRINT( a )         Serial.print( a )
-#define __SERPRINT2( a , b )    Serial.print( a , b )
-                                
-#define __SERBOLD( a )          if ( __TERMINAL == __TTTERM ) \
-                                  Serial.print( "\e[1m" );    \
-                                Serial.print( a );            \
-                                if ( __TERMINAL == __TTTERM ) \
-                                  Serial.print( "\e[0m" );    \
-                                
-#define __SERBOLD2( a , b )     if ( __TERMINAL == __TTTERM ) \
-                                  Serial.print( "\e[1m" );    \
-                                Serial.print( a , b );        \
-                                if ( __TERMINAL == __TTTERM ) \
-                                  Serial.print( "\e[0m" );    \
-// Serial.print BLink if (a) is Higher than (b)
-#define __SERBLH( a, b )  1
+#define __NORMAL                  if ( __TERMINAL == __TTTERM ) Serial.print( "\e[0m" )
+#define __BOLD                    if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
+#define __BLANK                   Serial.print( "  " )
 
-// Serial.print BLink if (a) is Lower than (b)
-#define __SERBLL( a, b )  1
+#define __SERPRINT( a )           Serial.print( a )
+#define __SERPRINTLN( a )         Serial.println( a )
+#define __SERPRINT2( a , b )      Serial.print( a , b )
+#define __SERPRINT2LN( a , b )    Serial.println( a , b )
+#define __SERLN                   Serial.println()
+
+void __escape_code_comp( unsigned char code ) {
+  Serial.print( "\e[" );
+  Serial.print( code );
+  Serial.print( "m" );
+}
+                                
+#define __SERBOLD( a )            if ( __TERMINAL == __TTTERM ) \
+                                    Serial.print( "\e[1m" );    \
+                                  Serial.print( a );            \
+                                  if ( __TERMINAL == __TTTERM ) \
+                                    Serial.print( "\e[0m" );    \
+                                
+#define __SERBOLD2( a , b )       if ( __TERMINAL == __TTTERM ) \
+                                    Serial.print( "\e[1m" );    \
+                                  Serial.print( a , b );        \
+                                  if ( __TERMINAL == __TTTERM ) \
+                                    Serial.print( "\e[0m" );    \
+
+#define __SERCOLOR( a, col )      if ( __TERMINAL == __TTTERM ) \
+                                    __escape_code_comp( col );  \
+                                  Serial.print( a );            \
+                                  if ( __TERMINAL == __TTTERM ) \
+                                    Serial.print( "\e[0m" );    \
+                                
+#define __SERCOLOR2( a , b, col ) if ( __TERMINAL == __TTTERM ) \
+                                    __escape_code_comp( col );  \
+                                  Serial.print( a , b );        \
+                                  if ( __TERMINAL == __TTTERM ) \
+                                    Serial.print( "\e[0m" );    \
+
+// Serial.print BLink if (a) is Higher than (b) then (c)
+#define __SERBLC( a, c )           if ( 1 ) {        \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERCOLOR( a,  c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERPRINT( a );   \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
+
+// Serial.print BLink if (a) is Higher than (b) then (c)
+#define __SERBLC2( a, b, c )      if ( 1 ) {        \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERCOLOR2( a, b, c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERPRINT2( a, b );   \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
+
+// Serial.print BLink if (a) is Higher than (b) then (c)
+#define __SERBLH( a, b, c )       if ( a > b ) {        \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERPRINT( c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERBOLD( c );   \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
+
+// Serial.print BLink if (a) is Lower than (b) then (c)
+#define __SERBLL( a, b, c)        if ( a < b ) {        \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERPRINT( c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERBOLD( c );   \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
 
 // Serial.print BLink if (a) is Equal to (b) then (c)
 #define __SERBLE( a, b, c)        if ( a ==  b ) {      \
@@ -110,21 +195,144 @@ FASTLED_USING_NAMESPACE
                                     __BLANK;            \
                                   }                     \
 
+// Serial.print BLink if (a) is Higher than (b) then (c)
+#define __SERBLCH( a, b, c, d)   if ( a > b ) {        \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERPRINT( c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERCOLOR( c, d ); \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
 
-// Serial.print Bold if (a) is Higher than (b)
-#define __SERBH( a, b )   1
 
-// Serial.print Bold if (a) is Lower than (b)
-#define __SERBL( a, b )   1
+// Serial.print BLink if (a) is Lower than (b) then (c)
+#define __SERBLCL( a, b, c, d)    if ( a < b ) {        \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERPRINT( c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERCOLOR( c, d ); \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
 
-// Serial.print Bold if (a) is Equal to (b)
-#define __SERBE( a, b )   1
+// Serial.print BLink if (a) is Equal to (b) then (c)
+#define __SERBLCE( a, b, c, d)    if ( a ==  b ) {      \
+                                    static char tg = 0; \
+                                    if ( tg ) {         \
+                                      __SERPRINT( c );  \
+                                    }                   \
+                                    else {              \
+                                      __SERCOLOR( c, d ); \
+                                    }                   \
+                                    tg ^= 1;            \
+                                    __BLANK;            \
+                                  }                     \
+
+// Serial.print BLink if (a) is Higher than (b) then (c)
+#define __SERBLCH2( a, b, c, d, e)  if ( a > b ) {        \
+                                      static char tg = 0; \
+                                      if ( tg ) {         \
+                                        __SERPRINT2( c, d );   \
+                                      }                   \
+                                      else {              \
+                                        __SERCOLOR2( c, d, e); \
+                                      }                   \
+                                      tg ^= 1;            \
+                                      __BLANK;            \
+                                    }                     \
+
+// Serial.print BLink if (a) is Lower than (b) then (c)
+#define __SERBLCL2( a, b, c, d, e)  if ( a < b ) {        \
+                                      static char tg = 0; \
+                                      if ( tg ) {         \
+                                        __SERPRINT2( c, d );   \
+                                      }                   \
+                                      else {              \
+                                        __SERCOLOR2( c, d, e); \
+                                      }                   \
+                                      tg ^= 1;            \
+                                      __BLANK;            \
+                                    }                     \
+
+// Serial.print BLink if (a) is Equal to (b) then (c)
+#define __SERBLCE2( a, b, c, d, e)  if ( a ==  b ) {      \
+                                      static char tg = 0; \
+                                      if ( tg ) {         \
+                                        __SERPRINT2( c, d );   \
+                                      }                   \
+                                      else {              \
+                                        __SERCOLOR2( c, d, e); \
+                                      }                   \
+                                      tg ^= 1;            \
+                                      __BLANK;            \
+                                    }                     \
+
+// Serial.print Bold if (a) is Higher than (b) then (c)
+#define __SERBH( a, b, c)           if ( a > b ) {    \
+                                      __SERBOLD( c ); \
+                                      __BLANK;        \
+                                    }                 \
+
+// Serial.print Bold if (a) is Lower than (b) then (c)
+#define __SERBL( a, b, c)           if ( a < b ) {    \
+                                      __SERBOLD( c ); \
+                                      __BLANK;        \
+                                    }                 \
+
+// Serial.print Bold if (a) is Equal to (b) then (c)
+#define __SERBE( a, b, c)           if ( a == b ) {   \
+                                      __SERBOLD( c ); \
+                                      __BLANK;        \
+                                    }                 \
+
+// Serial.print COLOR if (a) is Higher than (b) then (c) in color (d)
+#define __SERCH( a, b, c, d)        if ( a > b ) {        \
+                                      __SERCOLOR( c, d ); \
+                                      __BLANK;            \
+                                    }                     \
+
+// Serial.print COLOR if (a) is Lower than (b) then (c) in color (d)
+#define __SERCL( a, b, c, d)        if ( a < b ) {        \
+                                      __SERCOLOR( c, d ); \
+                                      __BLANK;            \
+                                    }                     \
+
+// Serial.print COLOR if (a) is Equal to (b) then (c) in color (d)
+#define __SERCE( a, b, c, d)        if ( a == b ) {       \
+                                      __SERCOLOR( c, d ); \
+                                      __BLANK;            \
+                                    }                     \
+
+// Serial.print COLOR if (a) is Higher than (b) then (c) in color (d)
+#define __SERCH2( a, b, c, d, e)    if ( a > b ) {           \
+                                      __SERCOLOR2( c, d, e); \
+                                      __BLANK;               \
+                                    }                        \
+
+// Serial.print COLOR if (a) is Lower than (b) then (c) in color (d)
+#define __SERCL2( a, b, c, d, e)    if ( a < b ) {           \
+                                      __SERCOLOR2( c, d, e); \
+                                      __BLANK;               \
+                                    }                        \
+
+// Serial.print COLOR if (a) is Equal to (b) then (c) in color (d)
+#define __SERCE2( a, b, c, d, e)    if ( a == b ) {          \
+                                      __SERCOLOR2( c, d, e); \
+                                      __BLANK;               \
+                                    }                        \
 
 //  ------------------------------------------------------------------- RFC DEFINES
 #define THE_ACTIVATION      ( aTHA + 12.0 )
 #define THE_DEACTIVATION    ( aTHA + 7.0 )
-#define THV_ACTIVATION      ( aTHA + 25.0 ) // 45.0
-#define THV_DEACTIVATION    ( aTHA + 20.0 ) // 40.0
+#define THV_ACTIVATION      ( aTHA + 28.0 ) // 45.0
+#define THV_DEACTIVATION    ( aTHA + 21.0 ) // 40.0
 #define THC_ACTIVATION      ( aTHA + 25.0 ) // 42.0
 #define THC_DEACTIVATION    ( aTHA + 15.0 ) // 40.0
 
@@ -149,13 +357,15 @@ int  NEnable = 0;             //  Canale N
 
 int   inHelp = 0;
 
-int Controller = __ON;
+int contr = __ON;
 
 byte delta = __OFF;
 
 //  ------------------------------------------------------------------- DIGITAL SENSOR DEFINES
 #define ONE_WIRE_BUS  18
-#define SERIAL_DIGIT  2
+#define SERIAL_DIGIT  1
+
+unsigned char Tdigit = SERIAL_DIGIT;
 
 #define _NUM_SENSORS  3
 
@@ -176,7 +386,7 @@ byte delta = __OFF;
   #if ( __TERMINAL == __PLOT )
     #define __RESOLUTION  12
   #else
-    #define __RESOLUTION  11
+    #define __RESOLUTION  10
   #endif
 #endif
 
@@ -188,7 +398,7 @@ byte delta = __OFF;
 
 #define __ERROR_CHECK   __ENABLE
 
-#define __THERMAL_SMOOTH_FACTOR       30
+#define __THERMAL_SMOOTH_FACTOR       50
 #define __DERIVATIVE_SMOOTH_FACTOR    30
 
 #if ( __TERMINAL == __PLOT )
@@ -253,6 +463,13 @@ float mTHE = 0.0;
 float mTHV = 0.0;
 float mTHC = 0.0;
 
+float pTHA = 0.0;
+float pTHE = 0.0;
+float pTHV = 0.0;
+float pTHC = 0.0;
+float pTHGen = 0.0;
+
+
 //  ------------------------------------------------------------------- ANALOG SENSOR DEFINES
 
 #ifdef ARDUINO_SAM_DUE
@@ -276,15 +493,6 @@ Thermistor* cpu = new AverageThermistor( oCPU , TH_ANAL_AVERAGE , 1 );
 
 #define THA_MAX     40.0
 #define THA_MIN     20.0
-
-#define THE_MAX     ( aTHA + 20.0 )
-#define THE_MIN     ( aTHA + 5 )
-
-#define THV_MAX     60.0
-#define THV_MIN     40.0
-
-#define THC_MAX     55.0
-#define THC_MIN     30.0
 
 #define __EQUAL_LIMIT   600    //  uguali tra i vari sensori                   600 = 5 minuto
 #define __SAME_LIMIT    1200   //  stessa lettura sul singolo sensore         1200 = 10 minuti
@@ -365,8 +573,8 @@ void  SensErrorCheck( void ) {
 #define __NORMALY_OPENED  false
 #define __NORMALY_CLOSED  true
 
-Relay   RVideo     ( __VIDEO     , __NORMALY_OPENED );
-Relay   RRear ( __REAR , __NORMALY_OPENED );
+Relay   RVideo( __VIDEO     , __NORMALY_OPENED );
+Relay   RRear( __REAR , __NORMALY_OPENED );
 Relay   RFront( __FRONT , __NORMALY_OPENED );
 
 byte Rvd = __OFF;
@@ -415,6 +623,8 @@ CRGB leds[NUM_LEDS];
 #define _L_ERROR_OFF(a)   leds[ a ].setRGB( 0, 0, 0 )
 
 #define _L_ON_ON          leds[_LN_ON].setRGB( 0, _L_0XFF, 0)
+#define _L_ON_ON_HT       leds[_LN_ON].setRGB( _L_0XFF, 0, 0)
+#define _L_ON_ON_LT       leds[_LN_ON].setRGB( _L_0XFF, 0, 0)
 #define _L_ON_OFF         leds[_LN_ON].setRGB( 0, 0, 0)
 
 #define _L_CNTR_OFF       leds[_LN_CNTR].setRGB( 0, 0, 0)
@@ -443,7 +653,7 @@ CRGB leds[NUM_LEDS];
 #define _L_SV_OFF         leds[_LN_SV].setRGB( 0, 0, 0)
 #define _L_SV_SET(a,b,c)  leds[_LN_SV].setRGB( a, b, c)
 
-#define _L_PLS_ON         leds[_LN_PLS].setRGB( 0, 0, 128)
+#define _L_PLS_ON         leds[_LN_PLS].setRGB( 0, 0, 0)
 #define _L_PLS_OFF        leds[_LN_PLS].setRGB( 0, 0, 0)
 
 #define _L_DRV_OFF        leds[_LN_DRV].setRGB( 0, 0, 0)
@@ -468,27 +678,9 @@ float fmap(float x, float in_min, float in_max, float out_min, float out_max) {
 #define _R_MAX    255.0
 #define _B_MAX    255.0
 
-void  set_ls_temp( byte led , float temp ) {
-  int rv = 0.0;
-  int bv = 0.0;
-  if ( led == _LN_SV ) {
-    rv = (int)fmap( temp , THV_MIN , THV_MAX , 0.0 , _R_MAX );
-    bv = (int)fmap( temp , THV_MIN , THV_MAX , 0.0 , _B_MAX );
-  } else if ( led == _LN_SE ) {
-    rv = (int)fmap( temp , THE_MIN , THE_MAX , 0.0 , _R_MAX );
-    bv = (int)fmap( temp , aTHA    , THE_MAX , 0.0 , _B_MAX );
-  } else if ( led == _LN_SA ) {
-    rv = (int)fmap( temp , THA_MIN , THA_MAX , 0.0 , _R_MAX );
-    bv = (int)fmap( temp , THA_MIN , THA_MAX , 0.0 , _B_MAX );
-  } else if ( led == _LN_SC ) {
-    rv = (int)fmap( temp , THC_MIN , THC_MAX , 0.0 , _R_MAX );
-    bv = (int)fmap( temp , THC_MIN , THC_MAX , 0.0 , _B_MAX );
-  }
-  bv = 255 - bv; 
-  if ( rv < 0 ) rv = 0;
-  if ( rv > _R_MAX ) rv = _R_MAX;
-  if ( bv < 0 ) bv = 0;
-  if ( bv > _B_MAX ) bv = _B_MAX;
+void  set_ls_temp( byte led , float perc ) {
+  int rv = (int)fmap( perc , 0.0 , 100.0 , 0.0 , _R_MAX );
+  int bv = 255 - rv; 
   _L_SET( led , rv , 0 , bv );
 }
 
@@ -517,7 +709,7 @@ void  printStatus( void ) {
     if ( AutoInit == __OFF )
       Serial.print("INIT   ");
     else {
-      if ( Controller == __ON ) 
+      if ( contr == __ON ) 
         Serial.print("AUTO   ");
       else
         Serial.print("MANUAL ");
@@ -545,7 +737,7 @@ void  printStatus( void ) {
       if ( AutoInit == __OFF )
         Serial.print("INIT   ");
       else {
-        if ( Controller == __ON ) 
+        if ( contr == __ON ) 
           Serial.print("\e[1mAUTO\e[0m   ");
         else
           Serial.print("\e[1mMANUAL\e[0m ");
@@ -600,7 +792,7 @@ void bigFail( void ) {
   byte r = 0;
   _ALL_LED_OFF;
   __ERROR_STOP {
-    checkSer();
+    commandAcq();
     _L_ERROR_ON( _LN_ON );
     _L_ERROR_ON( _LN_CNTR );
     _L_UPDATE;
@@ -625,23 +817,23 @@ void printLine( void )  {
 
       Serial.print(" CH A/E/V/C: ");
       __BOLD;
-      Serial.print(aTHA , SERIAL_DIGIT );
+      Serial.print(aTHA , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(aTHE , SERIAL_DIGIT );
+      Serial.print(aTHE , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(aTHV , SERIAL_DIGIT );
+      Serial.print(aTHV , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(aTHC , SERIAL_DIGIT );
+      Serial.print(aTHC , Tdigit );
       __NORMAL;
       Serial.print(" - Der_v: ");
       __BOLD;
-      Serial.print( aTHDrv * 1000 , SERIAL_DIGIT );
+      Serial.print( aTHDrv * 1000 , Tdigit );
       __NORMAL;
       Serial.print( "/" );
       Serial.print( Dval );
@@ -651,15 +843,15 @@ void printLine( void )  {
       __NORMAL;
       Serial.print(" - Me/Mv/Mc: ");
       __BOLD;
-      Serial.print(mTHE , SERIAL_DIGIT );
+      Serial.print(mTHE , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(mTHV , SERIAL_DIGIT );
+      Serial.print(mTHV , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(mTHC , SERIAL_DIGIT );
+      Serial.print(mTHC , Tdigit );
 
       __NORMAL;
       Serial.print("  -  ");
@@ -695,23 +887,23 @@ void printLine( void )  {
       
       Serial.print(" A/DrvE/DrvV/DrvC/DrvTOT: ");
       __BOLD;
-      Serial.print(aTHA , SERIAL_DIGIT );
+      Serial.print(aTHA , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(aTHEDrv * 1000, SERIAL_DIGIT );
+      Serial.print(aTHEDrv * 1000, Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(aTHVDrv * 1000 , SERIAL_DIGIT );
+      Serial.print(aTHVDrv * 1000 , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(aTHCDrv * 1000 , SERIAL_DIGIT );
+      Serial.print(aTHCDrv * 1000 , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(aTHDrv * 1000 , SERIAL_DIGIT );
+      Serial.print(aTHDrv * 1000 , Tdigit );
 
       __NORMAL;
       Serial.print(" - Eq/Sm-a-e-v-c: ");
@@ -752,7 +944,7 @@ void printTable( void ) {
     Serial.print("\e[26A");
   }
 
-  Serial.print("Proxima Fan Controller - Version: " );
+  Serial.print("Proxima Fan contr - Version: " );
     Serial.print( RFC_VERSION );
     Serial.print(" - Up time: ");
     if ( hours < 10 )
@@ -771,21 +963,43 @@ void printTable( void ) {
   Serial.println();
 
   Serial.println("CONTROLLER:");
-    Serial.print("\tStatus: \t\t");
-    __SERBLE( AutoInit  , __OFF,   "Initialization")
-    else {
-      __SERBLE( Controller, __ON , "Automatic     ");
-      __SERBLE( Controller, __OFF, "MANUAL        ");
-    }
+    Serial.print("\tStatus:\t\t\t");
+      __SERBLCE   ( AutoInit  , __OFF , "Init  ", __BRIGHT_YELLOW )
+      else {
+        __SERCE   ( contr     , __ON  , "Auto  ", __BRIGHT_GREEN );
+        __SERBLCE ( contr     , __OFF , "MANUAL", __BRIGHT_RED );
+      }
+//      Serial.print("\t");
+      Serial.print(" - Percentage:\t\t");
+      __SERCE2( pTHGen , 0.00 , pTHGen , Tdigit , __BRIGHT_BLUE )
+      else __SERBLCH2( pTHGen , 90.0 , pTHGen , Tdigit , __BRIGHT_RED )
+      else __SERBLCH2( pTHGen , 80.0 , pTHGen , Tdigit , __BRIGHT_YELLOW )
+      else {
+        __SERPRINT2( pTHGen , Tdigit );
+      }
+      __SERPRINT( "%" );
+      __BLANK;
+    Serial.println();
+    Serial.print("\tScan [");
+      Serial.print( Texe );
+      Serial.print( "ms]:\t\t");
+      Serial.print( abs( Texe - RFC_DELAY ) < 2?"OK    ":"NOT OK" );
+      Serial.print("\t");
+      Serial.print(" - General Derivative:\t");
+      __SERCH2( ( aTHDrv * 1000 ), 20.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHDrv * 1000 ), 10.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHDrv * 1000 ), -20.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHDrv * 1000 ), -10.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else {
+        __SERCOLOR2( ( aTHDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
+      }
+      __BLANK;
     Serial.println();
   Serial.println();
 
-  Serial.println("ROOM:");
+  Serial.print("ROOM:");
     Serial.print("\tTemperature: \t\t");
-      __SERBOLD2( aTHA , SERIAL_DIGIT );
-      Serial.print("\t");
-      Serial.print(" - General Derivative:\t");
-      __SERBOLD2( ( aTHDrv * 1000 ) , SERIAL_DIGIT );
+      __SERCOLOR2( aTHA , Tdigit , __BRIGHT_WHITE );
       __BLANK;
     Serial.println();
   Serial.println();
@@ -793,31 +1007,55 @@ void printTable( void ) {
   Serial.print("CASE:");
     Serial.print("\tFan status:\t\t");
       if ( Rfr == __ON ) {
-        __SERBOLD( "ON ");
+        __SERBLC( "ON ",  __BRIGHT_GREEN );
       }
       else {
         __SERPRINT( "Off" );
       }
+      Serial.print("\t");
+      Serial.print(" - Percentage:\t\t");
+      __SERCE2( pTHE , 0.00 , pTHE , Tdigit , __BRIGHT_BLUE )
+      else __SERBLCH2( pTHE , 90.0 , pTHE , Tdigit , __BRIGHT_RED )
+      else __SERBLCH2( pTHE , 80.0 , pTHE , Tdigit , __BRIGHT_YELLOW )
+      else {
+        __SERPRINT2( pTHE , Tdigit );
+      }
+      __SERPRINT( "%" );
+      __BLANK;
     Serial.println();
     Serial.print("\tTh Activation:\t\t");
-      __SERPRINT2( THE_ACTIVATION , SERIAL_DIGIT );
+      __SERPRINT2( THE_ACTIVATION , Tdigit );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Activation gap:\t");
-      __SERPRINT2( THE_ACTIVATION - aTHE , SERIAL_DIGIT );
+      __SERCL( abs( THE_ACTIVATION - aTHE ) , 0 , "Hihger", __BRIGHT_RED )
+      else __SERBLCL2( abs( THE_ACTIVATION - aTHE ) , 1 ,  ( THE_ACTIVATION - aTHE ) , Tdigit , __BRIGHT_YELLOW )
+      else {
+        __SERPRINT2( THE_ACTIVATION - aTHE , Tdigit );
+      }
       __BLANK;
     Serial.println();
     Serial.print("\tTemperature:\t\t");
-      __SERBOLD2( aTHE , SERIAL_DIGIT );
+      __SERCOLOR2( aTHE , Tdigit , __BRIGHT_WHITE );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Derivative:\t\t");
-      __SERPRINT2( ( aTHEDrv * 1000 ) , SERIAL_DIGIT );
+      __SERCH2( ( aTHEDrv * 1000 ), 20.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHEDrv * 1000 ), 10.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHEDrv * 1000 ), -20.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHEDrv * 1000 ), -10.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else {
+        __SERCOLOR2( ( aTHEDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
+      }
       __BLANK;
     Serial.println();
     Serial.print("\tTh Deactivation:\t");
-      __SERPRINT2( THE_DEACTIVATION , SERIAL_DIGIT );
+      __SERPRINT2( THE_DEACTIVATION , Tdigit );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Deactivation gap:\t");
-      __SERPRINT2( aTHE - THE_DEACTIVATION , SERIAL_DIGIT );
+      __SERCL( aTHE - THE_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
+      else __SERPRINT2( aTHE - THE_DEACTIVATION , Tdigit );
       __BLANK;
     Serial.println();
   Serial.println();
@@ -825,31 +1063,55 @@ void printTable( void ) {
   Serial.print("VIDEO:");
     Serial.print("\tFan status:\t\t");
       if ( Rvd == __ON ) {
-        __SERBOLD( "ON ");
+        __SERBLC( "ON ",  __BRIGHT_GREEN );
       }
       else {
         __SERPRINT( "Off" );
       }
+      Serial.print("\t");
+      Serial.print(" - Percentage:\t\t");
+      __SERCE2( pTHV , 0.00 , pTHV , Tdigit , __BRIGHT_BLUE )
+      else __SERBLCH2( pTHV , 90.0 , pTHV , Tdigit , __BRIGHT_RED )
+      else __SERBLCH2( pTHV , 80.0 , pTHV , Tdigit , __BRIGHT_YELLOW )
+      else {
+        __SERPRINT2( pTHV , Tdigit );
+      }
+      __SERPRINT( "%" );
+      __BLANK;
     Serial.println();
     Serial.print("\tTh Activation:\t\t");
-      __SERPRINT2( THV_ACTIVATION , SERIAL_DIGIT );
+      __SERPRINT2( THV_ACTIVATION , Tdigit );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Activation gap:\t");
-      __SERPRINT2( THV_ACTIVATION - aTHV , SERIAL_DIGIT );
+      __SERCL( abs( THV_ACTIVATION - aTHV ) , 0 ,   "Hihger", __BRIGHT_RED )
+      else __SERBLCL2( abs( THV_ACTIVATION - aTHV ) , 1 ,  ( THV_ACTIVATION - aTHV ) , Tdigit , __BRIGHT_YELLOW )
+      else {
+        __SERPRINT2( THV_ACTIVATION - aTHV , Tdigit );
+      }
       __BLANK;
     Serial.println();
     Serial.print("\tTemperature:\t\t");
-      __SERBOLD2( aTHV , SERIAL_DIGIT );
+      __SERCOLOR2( aTHV , Tdigit , __BRIGHT_WHITE );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Derivative:\t\t");
-      __SERPRINT2( ( aTHVDrv * 1000 ) , SERIAL_DIGIT );
+      __SERCH2( ( aTHVDrv * 1000 ), 20.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHVDrv * 1000 ), 10.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHVDrv * 1000 ), -20.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHVDrv * 1000 ), -10.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else {
+        __SERCOLOR2( ( aTHVDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
+      }
       __BLANK;
     Serial.println();
     Serial.print("\tTh Deactivation:\t");
-      __SERPRINT2( THV_DEACTIVATION , SERIAL_DIGIT );
+      __SERPRINT2( THV_DEACTIVATION , Tdigit );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Deactivation gap:\t");
-      __SERPRINT2( aTHV - THV_DEACTIVATION , SERIAL_DIGIT );
+      __SERCL( aTHV - THV_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
+      else __SERPRINT2( aTHV - THV_DEACTIVATION , Tdigit );
       __BLANK;
     Serial.println();
   Serial.println();
@@ -857,45 +1119,73 @@ void printTable( void ) {
   Serial.print("CPU:");
     Serial.print("\tFan status:\t\t");
       if ( Rrr == __ON ) {
-        __SERBOLD( "ON ");
+        __SERBLC( "ON ",  __BRIGHT_GREEN );
       }
       else {
         __SERPRINT( "Off" );
       }
+      Serial.print("\t");
+      Serial.print(" - Percentage:\t\t");
+      __SERCE2( pTHC , 0.00 , pTHC , Tdigit , __BRIGHT_BLUE )
+      else __SERBLCH2( pTHC , 90.0 , pTHC , Tdigit , __BRIGHT_RED )
+      else __SERBLCH2( pTHC , 80.0 , pTHC , Tdigit , __BRIGHT_YELLOW )
+      else {
+        __SERPRINT2( pTHC , Tdigit );
+      }
+      __SERPRINT( "%" );
+      __BLANK;
     Serial.println();
     Serial.print("\tTh Activation:\t\t");
-      __SERPRINT2( THC_ACTIVATION , SERIAL_DIGIT );
+      __SERPRINT2( THC_ACTIVATION , Tdigit );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Activation gap:\t");
-      __SERPRINT2( THC_ACTIVATION - aTHC , SERIAL_DIGIT );
+      __SERCL( abs( THC_ACTIVATION - aTHC ) , 0 ,   "Hihger", __BRIGHT_RED )
+      else __SERBLCL2( abs( THC_ACTIVATION - aTHC ) , 1 ,  ( THC_ACTIVATION - aTHC ) , Tdigit , __BRIGHT_YELLOW )
+      else {
+        __SERPRINT2( THC_ACTIVATION - aTHC , Tdigit );
+      }
       __BLANK;
     Serial.println();
     Serial.print("\tTemperature:\t\t");
-      __SERBOLD2( aTHC , SERIAL_DIGIT );
+      __SERCOLOR2( aTHC , Tdigit , __BRIGHT_WHITE );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Derivative:\t\t");
-      __SERPRINT2( ( aTHCDrv * 1000 ) , SERIAL_DIGIT );
+      __SERCH2( ( aTHCDrv * 1000 ), 20.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHCDrv * 1000 ), 10.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHCDrv * 1000 ), -20.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHCDrv * 1000 ), -10.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else {
+        __SERCOLOR2( ( aTHCDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
+      }
       __BLANK;
     Serial.println();
     Serial.print("\tTh Deactivation:\t");
-      __SERPRINT2( THC_DEACTIVATION , SERIAL_DIGIT );
+      __SERPRINT2( THC_DEACTIVATION , Tdigit );
+      __BLANK;
       Serial.print("\t");
       Serial.print(" - Deactivation gap:\t");
-      __SERPRINT2( aTHC - THC_DEACTIVATION , SERIAL_DIGIT );
+      __SERCL( aTHC - THC_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
+      else __SERPRINT2( aTHC - THC_DEACTIVATION , Tdigit );
       __BLANK;
     Serial.println();
     Serial.println();
     
     __SERPRINT( "\tInsert a valid command [h for help] : " );
-    if ( inByte )
-      __SERBOLD( char(inByte) );
-    __BLANK;
+    if ( inByte ) {
+      __SERCOLOR( char(inByte) , __BRIGHT_YELLOW );
+      __BLANK;
+      delay(1000);
+    }
+    else
+      __SERPRINT( "_" );
     
   Serial.println();
 }
 
 
-void SerDebug( void ) {
+void serOutput( void ) {
   if ( __TERMINAL != __PLOT ) {
     if ( __CONTENT == __LINE ) {
       printLine();
@@ -946,7 +1236,7 @@ void  showHelp( void ) {
       Serial.println( "\e[1J" );
     }
     Serial.println( "---------------------------------------------------" );
-    Serial.print  ( "Reflection Fan Controller [RFC v");
+    Serial.print  ( "Reflection Fan contr [RFC v");
     Serial.print  ( RFC_VERSION );
     Serial.print  ( "]");
     Serial.println( "" );
@@ -969,6 +1259,17 @@ void  showHelp( void ) {
   }
   else
    Serial.println( "  Press h o H to get the commands list" );
+}
+
+
+void  clearScreen( void ) {
+  Serial.println( "" );
+  if ( cycles > 0 ) {
+    if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) )
+      Serial.println( "\e[1J" );
+    for ( int i = 0; i < 100; i++) 
+      Serial.println();
+  }
 }
 
 
@@ -1044,7 +1345,7 @@ void  Relay_manager( int ch , int st ) {
 
 #if ( __READING == __OLD ) 
 
-  void avg_reading( void ) {
+  void tempRead( void ) {
     for( int a = 0; a < __AVG_READ ; a++ ) {
       sensors.requestTemperatures();
       aTHV += sensors.getTempC( THvideo );
@@ -1065,7 +1366,7 @@ void  Relay_manager( int ch , int st ) {
 
 #elif ( __READING == __NEW ) 
 
-  void avg_reading( void ) {
+  void tempRead( void ) {
     sensors.requestTemperatures();
     THV_s[ id ] = sensors.getTempC( THvideo );
     THE_s[ id ] = sensors.getTempC( THenvrm );
@@ -1143,24 +1444,23 @@ void  Relay_manager( int ch , int st ) {
 
 #endif
 
-void  Thrm_controller( void ) {
+void  Controller( void ) {
   if ( cycles < 15 ) {
     AutoInit = __OFF;
   } 
   else {
-    
     AutoInit = __ON;
   }
 
   if ( AutoInit == __ON ) {
     if ( ! Force  ) {
-      Controller = __ON;
+      contr = __ON;
     }
 	else {
-      Controller = __OFF;
+      contr = __OFF;
     }
       
-    if ( Controller == __ON ) {
+    if ( contr == __ON ) {
       Relay_manager( __NOT_USED , __OFF );
 	//  ----------------------------------------  TH Environment
 		if ( aTHE > THE_ACTIVATION ) {
@@ -1200,126 +1500,132 @@ void  Thrm_controller( void ) {
         Relay_manager( __NOT_USED , __OFF );
       }
     }
-  } /* else {
-    Force = 1;
-    Relay_manager( __VIDEO , __ON );
-    Relay_manager( __REAR , __ON );
-    Relay_manager( __FRONT , __ON );
-    Relay_manager( __NOT_USED , __ON );
-  } */
+  }
+  pTHA = ( ( constrain( aTHA, THA_MIN,  THA_MAX ) - THA_MIN ) / ( THA_MAX - THA_MIN ) ) * 100.0;
+  pTHE = ( ( constrain( aTHE, THE_DEACTIVATION,  THE_ACTIVATION ) - THE_DEACTIVATION ) / ( THE_ACTIVATION - THE_DEACTIVATION ) ) * 100.0;
+  pTHV = ( ( constrain( aTHV, THV_DEACTIVATION,  THV_ACTIVATION ) - THV_DEACTIVATION ) / ( THV_ACTIVATION - THV_DEACTIVATION ) ) * 100.0;
+  pTHC = ( ( constrain( aTHC, THC_DEACTIVATION,  THC_ACTIVATION ) - THC_DEACTIVATION ) / ( THC_ACTIVATION - THC_DEACTIVATION ) ) * 100.0;
+  pTHGen = ( pTHE + pTHV + pTHC ) / 3.0;
 }
 
 
-
-void checkSer( void ) {
+void commandAcq( void ) {
   if (Serial.available()) {
     inByte = Serial.read();
-    switch( inByte ) {
-      case 'h':
-      case 'H': {
-        inHelp = 1;
-        break;
-      }
-      case 'R': {
-        delay(2000);
-        rstc_start_software_reset(RSTC);
-        break;
-      }
-      case 's': {
-        __SCROLL = __OFF;
-        break;
-      }
-      case 'S': {
-        __SCROLL = __ON;
-        break;
-      }
-      case 'd': {
-        delta ^= __ON;
-        break;
-      }
-      case 'a':
-      case 'A': {
-         Force = 0;
-        VEnable = 0;
-        REnable = 0;
-        FEnable = 0;
-        NEnable = 0;
-        SForce = 0;
-
-        break;
-      }
-      case 'f': {
-        VEnable = __DISABLE;
-        Relay_manager( __VIDEO , __OFF );
-        REnable = __DISABLE;
-        Relay_manager( __REAR , __OFF );
-        FEnable = __DISABLE;
-        Relay_manager( __FRONT , __OFF );
-
-        break;
-      }
-      case 'F': {
-         Force = 1;
-        SForce = 0;
-        break;
-      }
-      case 'V':
-      case 'v': {
-        if ( inByte == 'V' ) VEnable = __ENABLE;
-        if ( inByte == 'v' ) {
-          Relay_manager( __VIDEO , __OFF );
-          VEnable = __DISABLE;
-        }
-        break;
-      }
-      case 'M':
-      case 'm': {
-        if ( inByte == 'M' ) REnable = __ENABLE;
-        if ( inByte == 'm' ) {
-          Relay_manager( __REAR , __OFF );
-          REnable = __DISABLE;
-        }
-        break;
-      }
-      case 'O':
-      case 'o': {
-        if ( inByte == 'O' ) FEnable = __ENABLE;
-        if ( inByte == 'o' ) {
-          Relay_manager( __FRONT , __OFF );
-          FEnable = __DISABLE;
-        }
-        break;
-      }
-      case 'N':
-      case 'n': {
-        if ( inByte == 'N' ) NEnable = __ENABLE;
-        if ( inByte == 'n' ) {
-          Relay_manager( __NOT_USED , __OFF );
-          NEnable = __DISABLE;
-        }
-        break;
-      }
-      default: {
-        inByte = 0;
-      }
-    }
   }
   else
     inByte = 0;
-  
 }
 
 
-void LedCntr( void ) {
-  _L_PLS_OFF;  
-  _L_UPDATE;
-  delay( 20 );
-  _L_PLS_ON;
-  _L_UPDATE;
-  delay( 60 );
-  _L_PLS_OFF;  
-  _L_UPDATE;
-  delay( 20 );
+void commandProcess( void ) {
+  switch( inByte ) {
+    case 'h':
+    case 'H': {
+      inHelp = 1;
+      break;
+    }
+    case 'R': {
+      delay(2000);
+      rstc_start_software_reset(RSTC);
+      break;
+    }
+    case '.': {
+      clearScreen();
+      break;
+    }
+    case '+': {
+      if ( ++Tdigit > 2 ) Tdigit = 2;
+      break;
+    }
+    case '-': {
+      if ( --Tdigit < 1 ) Tdigit = 1;
+      break;
+    }
+    case 's': {
+      __SCROLL = __OFF;
+      break;
+    }
+    case 'S': {
+      __SCROLL = __ON;
+      break;
+    }
+    case 'd': {
+      delta ^= __ON;
+      break;
+    }
+    case 'a':
+    case 'A': {
+        Force = 0;
+      VEnable = 0;
+      REnable = 0;
+      FEnable = 0;
+      NEnable = 0;
+      SForce = 0;
+
+      break;
+    }
+    case 'f': {
+      VEnable = __DISABLE;
+      Relay_manager( __VIDEO , __OFF );
+      REnable = __DISABLE;
+      Relay_manager( __REAR , __OFF );
+      FEnable = __DISABLE;
+      Relay_manager( __FRONT , __OFF );
+
+      break;
+    }
+    case 'F': {
+        Force = 1;
+      SForce = 0;
+      break;
+    }
+    case 'V':
+    case 'v': {
+      if ( inByte == 'V' ) VEnable = __ENABLE;
+      if ( inByte == 'v' ) {
+        Relay_manager( __VIDEO , __OFF );
+        VEnable = __DISABLE;
+      }
+      break;
+    }
+    case 'M':
+    case 'm': {
+      if ( inByte == 'M' ) REnable = __ENABLE;
+      if ( inByte == 'm' ) {
+        Relay_manager( __REAR , __OFF );
+        REnable = __DISABLE;
+      }
+      break;
+    }
+    case 'O':
+    case 'o': {
+      if ( inByte == 'O' ) FEnable = __ENABLE;
+      if ( inByte == 'o' ) {
+        Relay_manager( __FRONT , __OFF );
+        FEnable = __DISABLE;
+      }
+      break;
+    }
+    case 'N':
+    case 'n': {
+      if ( inByte == 'N' ) NEnable = __ENABLE;
+      if ( inByte == 'n' ) {
+        Relay_manager( __NOT_USED , __OFF );
+        NEnable = __DISABLE;
+      }
+      break;
+    }
+    default: {
+      inByte = 0;
+    }
+  }
+}
+
+
+void ledController( void ) {
+  
+  _L_ON_ON;
   
   if ( VEnable == __DISABLE ) {
     if ( nrun % 2 )
@@ -1360,8 +1666,12 @@ void LedCntr( void ) {
     }
   }
 
-  if ( Controller == __ON )
-    _L_CNTR_AUTO;
+  if ( contr == __ON ) {
+    if ( nrun % 2 )
+      _L_CNTR_AUTO;
+    else
+      set_ls_temp( _LN_CNTR , pTHGen );
+  }
   else {
     if ( nrun % 2 ) {
       _L_CNTR_MANU;
@@ -1377,10 +1687,10 @@ void LedCntr( void ) {
   }
 
   if ( AutoInit == __ON ) {
-    set_ls_temp( _LN_SA , aTHA );
-    set_ls_temp( _LN_SE , aTHE );
-    set_ls_temp( _LN_SV , aTHV );
-    set_ls_temp( _LN_SC , aTHC );
+    set_ls_temp( _LN_SA , pTHA );
+    set_ls_temp( _LN_SE , pTHE );
+    set_ls_temp( _LN_SV , pTHV );
+    set_ls_temp( _LN_SC , pTHC );
     
   } else {
     if ( nrun % 2 )
@@ -1439,7 +1749,7 @@ void setup(void) {
     Serial.println();
     Serial.println("---------------------------------------------------");
     Serial.println();
-    Serial.print  ("Reflection Fan Controller [RFC v");
+    Serial.print  ("Proxima Fan contr [PFC v");
     Serial.print( RFC_VERSION );
     Serial.print("]");
     Serial.println();
@@ -1657,15 +1967,14 @@ void setup(void) {
 void loop(void) {
   unsigned long tTexe = millis();
   
-  checkSer();
-  avg_reading();
-//  if ( cycles < 3 )
-//    avg_reset();
-  Thrm_controller();
-  LedCntr();
-  SerDebug();
+  commandAcq();
+  tempRead();
+  Controller();
+  ledController();
+  serOutput();
   if ( __ERROR_CHECK == __ENABLE )
     SensErrorCheck();
+  commandProcess();
   
   //  ------------------------------------------------------------------- Delay
   cycles = millis() / 1000;
