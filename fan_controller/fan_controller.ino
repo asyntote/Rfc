@@ -38,7 +38,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.10-115"
+#define RFC_VERSION         "1.10-151"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -92,7 +92,7 @@ FASTLED_USING_NAMESPACE
 
 #define __NORMAL                  if ( __TERMINAL == __TTTERM ) Serial.print( "\e[0m" )
 #define __BOLD                    if ( __TERMINAL == __TTTERM ) Serial.print( "\e[1m" )
-#define __BLANK                   Serial.print( "  " )
+#define __BLANK                   Serial.print( " " )
 
 #define __SERPRINT( a )           Serial.print( a )
 #define __SERPRINTLN( a )         Serial.println( a )
@@ -331,8 +331,8 @@ void __escape_code_comp( unsigned char code ) {
 //  ------------------------------------------------------------------- RFC DEFINES
 #define THE_ACTIVATION      ( aTHA + 12.0 )
 #define THE_DEACTIVATION    ( aTHA + 7.0 )
-#define THV_ACTIVATION      ( aTHA + 28.0 ) // 45.0
-#define THV_DEACTIVATION    ( aTHA + 21.0 ) // 40.0
+#define THV_ACTIVATION      ( aTHA + 25.0 ) // 45.0
+#define THV_DEACTIVATION    ( aTHA + 15.0 ) // 40.0
 #define THC_ACTIVATION      ( aTHA + 25.0 ) // 42.0
 #define THC_DEACTIVATION    ( aTHA + 15.0 ) // 40.0
 
@@ -386,7 +386,7 @@ unsigned char Tdigit = SERIAL_DIGIT;
   #if ( __TERMINAL == __PLOT )
     #define __RESOLUTION  12
   #else
-    #define __RESOLUTION  10
+    #define __RESOLUTION  11
   #endif
 #endif
 
@@ -427,8 +427,9 @@ DeviceAddress       THambnt;
 int id = 0;
 int iddrv = 0;
 
-#define             __AMB_AVERAGED        __YES
-#define             __AMB_TIME  100
+#define             __AMB_AVERAGED        __NO
+#define             __AMB_TIME            9500
+
 unsigned long       time_amb = __RESET;
 
 int Dval = 0;
@@ -489,10 +490,25 @@ Thermistor* oCPU = new NTC_Thermistor( SENSOR_PIN, REFERENCE_RESISTANCE, NOMINAL
 Thermistor* cpu = new AverageThermistor( oCPU , TH_ANAL_AVERAGE , 1 );
 //Thermistor* cpu  = new SmoothThermistor( oCPU , SMOOTHING_FACTOR );
 
+//  ------------------------------------------------------------------- AIR BOMB DEFINES
+
+#define __INACTIVE              0
+#define __CHARGING              1 
+#define __IGNITION              2                           // Gestito dalla Controller
+#define __RUNNING               3
+#define __SWITCH_OFF            4                           // Gestito dalla Controller
+
+#define __AB_THRESHOLD          30.0
+#define __AB_TIMEOUT            5                          //  Espresso in minuti
+
+unsigned long AB_time = millis();
+byte AB_state = __INACTIVE;
+byte AB_force = __OFF;
+
 //  ------------------------------------------------------------------- LED REFERENCE VALUE
 
-#define THA_MAX     40.0
-#define THA_MIN     20.0
+#define THA_MAX         40.0
+#define THA_MIN         20.0
 
 #define __EQUAL_LIMIT   600    //  uguali tra i vari sensori                   600 = 5 minuto
 #define __SAME_LIMIT    1200   //  stessa lettura sul singolo sensore         1200 = 10 minuti
@@ -573,24 +589,23 @@ void  SensErrorCheck( void ) {
 #define __NORMALY_OPENED  false
 #define __NORMALY_CLOSED  true
 
-Relay   RVideo( __VIDEO     , __NORMALY_OPENED );
-Relay   RRear( __REAR , __NORMALY_OPENED );
-Relay   RFront( __FRONT , __NORMALY_OPENED );
+Relay   RVideo  ( __VIDEO , __NORMALY_OPENED );
+Relay   RRear   ( __REAR  , __NORMALY_OPENED );
+Relay   RFront  ( __FRONT , __NORMALY_OPENED );
 
 byte Rvd = __OFF;
 byte Rrr = __OFF;
 byte Rfr = __OFF;
 byte Rnu = __OFF;
 
-//  ------------------------------------------------------------------- MMACROS FROM DateTime.h
+//  ------------------------------------------------------------------- MACROS FROM DateTime.h
 #define SECS_PER_MIN  (60UL)
 #define SECS_PER_HOUR (3600UL)
 #define SECS_PER_DAY  (SECS_PER_HOUR * 24L)
 
 #define numberOfSeconds(_time_) (_time_ % SECS_PER_MIN)  
 #define numberOfMinutes(_time_) ((_time_ / SECS_PER_MIN) % SECS_PER_MIN)
-#define numberOfHours(_time_) (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
-
+#define numberOfHours(_time_)   (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
 
 //  ------------------------------------------------------------------- FASTLED DEFINES
 #if defined(FASTLED_VERSION) && (FASTLED_VERSION < 3001000)
@@ -941,7 +956,7 @@ void printTable( void ) {
 
   if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
     Serial.println("\e[1K");
-    Serial.print("\e[26A");
+    Serial.print("\e[27A");
   }
 
   Serial.print("Proxima Fan contr - Version: " );
@@ -970,7 +985,7 @@ void printTable( void ) {
         __SERBLCE ( contr     , __OFF , "MANUAL", __BRIGHT_RED );
       }
 //      Serial.print("\t");
-      Serial.print(" - Percentage:\t\t");
+      Serial.print("  - Percentage:\t\t");
       __SERCE2( pTHGen , 0.00 , pTHGen , Tdigit , __BRIGHT_BLUE )
       else __SERBLCH2( pTHGen , 90.0 , pTHGen , Tdigit , __BRIGHT_RED )
       else __SERBLCH2( pTHGen , 80.0 , pTHGen , Tdigit , __BRIGHT_YELLOW )
@@ -982,18 +997,38 @@ void printTable( void ) {
     Serial.println();
     Serial.print("\tScan [");
       Serial.print( Texe );
-      Serial.print( "ms]:\t\t");
+      Serial.print( "ms]:" );
+      __BLANK;
+      Serial.print( "\t\t" );
       Serial.print( abs( Texe - RFC_DELAY ) < 2?"OK    ":"NOT OK" );
       Serial.print("\t");
       Serial.print(" - General Derivative:\t");
-      __SERCH2( ( aTHDrv * 1000 ), 20.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_RED )
-      else __SERCH2( ( aTHDrv * 1000 ), 10.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
-      else __SERCL2( ( aTHDrv * 1000 ), -20.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
-      else __SERCL2( ( aTHDrv * 1000 ), -10.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      __SERCH2( ( aTHDrv * 1000 ), 40.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHDrv * 1000 ), 30.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHDrv * 1000 ), -40.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHDrv * 1000 ), -30.00, ( aTHDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
       else {
         __SERCOLOR2( ( aTHDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
       }
       __BLANK;
+    Serial.println();
+    Serial.print("\tAir Bomb:\t\t");
+    if ( AB_state ==  __INACTIVE ) {
+      __SERPRINT( "Inactive  " );
+    }
+    else if ( AB_state ==  __CHARGING ) {
+      __SERBLC(   "Charging  ", __BRIGHT_YELLOW );
+    }
+    else if ( AB_state ==  __RUNNING ) {
+      __SERBLC(   "RUNNING   ", __BRIGHT_RED );
+    }
+    else if ( AB_state ==  __IGNITION ) {
+      __SERCOLOR( "Ignition  ", __BRIGHT_YELLOW );
+    }
+    else if ( AB_state ==  __SWITCH_OFF ) {
+      __SERCOLOR( "Switch off", __BRIGHT_YELLOW );
+    }
+    __BLANK;
     Serial.println();
   Serial.println();
 
@@ -1040,10 +1075,10 @@ void printTable( void ) {
       __BLANK;
       Serial.print("\t");
       Serial.print(" - Derivative:\t\t");
-      __SERCH2( ( aTHEDrv * 1000 ), 20.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_RED )
-      else __SERCH2( ( aTHEDrv * 1000 ), 10.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
-      else __SERCL2( ( aTHEDrv * 1000 ), -20.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
-      else __SERCL2( ( aTHEDrv * 1000 ), -10.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      __SERCH2( ( aTHEDrv * 1000 ), 40.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHEDrv * 1000 ), 30.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHEDrv * 1000 ), -40.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHEDrv * 1000 ), -30.00, ( aTHEDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
       else {
         __SERCOLOR2( ( aTHEDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
       }
@@ -1096,10 +1131,10 @@ void printTable( void ) {
       __BLANK;
       Serial.print("\t");
       Serial.print(" - Derivative:\t\t");
-      __SERCH2( ( aTHVDrv * 1000 ), 20.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_RED )
-      else __SERCH2( ( aTHVDrv * 1000 ), 10.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
-      else __SERCL2( ( aTHVDrv * 1000 ), -20.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
-      else __SERCL2( ( aTHVDrv * 1000 ), -10.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      __SERCH2( ( aTHVDrv * 1000 ), 40.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHVDrv * 1000 ), 30.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHVDrv * 1000 ), -40.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHVDrv * 1000 ), -30.00, ( aTHVDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
       else {
         __SERCOLOR2( ( aTHVDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
       }
@@ -1152,10 +1187,10 @@ void printTable( void ) {
       __BLANK;
       Serial.print("\t");
       Serial.print(" - Derivative:\t\t");
-      __SERCH2( ( aTHCDrv * 1000 ), 20.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_RED )
-      else __SERCH2( ( aTHCDrv * 1000 ), 10.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
-      else __SERCL2( ( aTHCDrv * 1000 ), -20.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
-      else __SERCL2( ( aTHCDrv * 1000 ), -10.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      __SERCH2( ( aTHCDrv * 1000 ), 40.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_RED )
+      else __SERCH2( ( aTHCDrv * 1000 ), 30.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
+      else __SERCL2( ( aTHCDrv * 1000 ), -40.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_BLUE )
+      else __SERCL2( ( aTHCDrv * 1000 ), -30.00, ( aTHCDrv * 1000 ), Tdigit, __BRIGHT_YELLOW )
       else {
         __SERCOLOR2( ( aTHCDrv * 1000 ) , Tdigit, __BRIGHT_WHITE );
       }
@@ -1191,6 +1226,11 @@ void serOutput( void ) {
       printLine();
     }
     else if ( __CONTENT == __TABLE ) {
+      static unsigned long Tbupd = 0;
+      if ( ( millis() - Tbupd ) > 30000 ) {
+        clearScreen();
+        Tbupd = millis();
+      }
       printTable();
     }
   }
@@ -1374,8 +1414,13 @@ void  Relay_manager( int ch , int st ) {
     #if ( __AMB_AVERAGED == __YES )
       THA_s[ id ] = sensors.getTempC( THambnt );
     #else
-      aTHA = sensors.getTempC( THambnt );
-    #endif      
+      if ( time_amb == __RESET )
+        time_amb = millis();
+      else if ( ( millis() - time_amb ) >= __AMB_TIME ) {
+        aTHA = sensors.getTempC( THambnt );
+        time_amb = __RESET;
+      }
+    # endif      
     for( int a = 0; a < TH_AVERAGE ; a++ ) {
       aTHE += THE_s[a];
       aTHV += THV_s[a];
@@ -1386,8 +1431,6 @@ void  Relay_manager( int ch , int st ) {
     }
     #if ( __AMB_AVERAGED == __YES )
       aTHA /= (float)TH_AVERAGE;
-    #else
-      aTHA = sensors.getTempC( THambnt );
     #endif
     aTHE /= (float)TH_AVERAGE;
     aTHV /= (float)TH_AVERAGE;
@@ -1444,6 +1487,34 @@ void  Relay_manager( int ch , int st ) {
 
 #endif
 
+
+void airBomb_controller( void ) {
+  if ( AB_state ==  __INACTIVE ) {
+    if ( ( pTHE > __AB_THRESHOLD ) && ( pTHV > __AB_THRESHOLD ) && ( pTHC > __AB_THRESHOLD ) ) {
+      if ( ( Rvd == __OFF ) && ( Rrr == __OFF ) && ( Rfr == __OFF ) ) {
+        AB_state = __CHARGING;
+        AB_time = millis();
+      }
+    }
+  }
+  else if ( AB_state ==  __CHARGING ) {
+    if ( ( pTHE < __AB_THRESHOLD ) || ( pTHV < __AB_THRESHOLD ) || ( pTHC < __AB_THRESHOLD ) )
+      AB_state = __INACTIVE;
+    else if ( ( Rvd == __ON ) || ( Rrr == __ON ) || ( Rfr == __ON ) ) {
+      AB_state = __INACTIVE;
+    }
+    else {
+      if ( ( millis() - AB_time) > ( __AB_TIMEOUT * 60 * 1000 ) )
+        AB_state = __IGNITION;
+    }
+  }
+  else if ( AB_state == __RUNNING ) {
+    if ( ( pTHE ==  0.0 ) && ( pTHV == 0.0 ) && ( pTHC == 0.0 ) )
+      AB_state = __SWITCH_OFF;
+  }
+}
+
+
 void  Controller( void ) {
   if ( cycles < 15 ) {
     AutoInit = __OFF;
@@ -1456,38 +1527,46 @@ void  Controller( void ) {
     if ( ! Force  ) {
       contr = __ON;
     }
-	else {
+    else {
       contr = __OFF;
     }
       
     if ( contr == __ON ) {
       Relay_manager( __NOT_USED , __OFF );
 	//  ----------------------------------------  TH Environment
-		if ( aTHE > THE_ACTIVATION ) {
-			if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __ON );
-		}
-		else if ( aTHE < THE_DEACTIVATION ) {
-			if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __OFF );
-		}
-		
-	//  ----------------------------------------  TH Video
-		if ( aTHV > THV_ACTIVATION ) {
-			if ( VEnable == __ENABLE ) Relay_manager( __VIDEO , __ON );
-		}
-		else if ( aTHV < THV_DEACTIVATION ) {
-			if ( FEnable == __ENABLE ) Relay_manager( __VIDEO , __OFF );
-		}
-		
-	//  ----------------------------------------  TH CPU
-		if ( aTHC > THC_ACTIVATION ) {
-			if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
-		}
-		else if ( ( aTHC < THC_DEACTIVATION ) && ( aTHV < THV_DEACTIVATION ) ) {
-			if ( REnable == __ENABLE ) Relay_manager( __REAR , __OFF );
-		}
-	}
+      if ( aTHE > THE_ACTIVATION ) {
+        if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __ON );
+      }
+      else if ( aTHE < THE_DEACTIVATION ) {
+        if ( FEnable == __ENABLE ) Relay_manager( __FRONT , __OFF );
+      }
+      
+    //  ----------------------------------------  TH Video
+      if ( aTHV > THV_ACTIVATION ) {
+        if ( VEnable == __ENABLE ) Relay_manager( __VIDEO , __ON );
+      }
+      else if ( aTHV < THV_DEACTIVATION ) {
+        if ( FEnable == __ENABLE ) Relay_manager( __VIDEO , __OFF );
+      }
+      
+    //  ----------------------------------------  TH CPU
+      if ( aTHC > THC_ACTIVATION ) {
+        if ( REnable == __ENABLE ) Relay_manager( __REAR , __ON );
+      }
+      else if ( ( aTHC < THC_DEACTIVATION ) && ( aTHV < THV_DEACTIVATION ) ) {
+        if ( REnable == __ENABLE ) Relay_manager( __REAR , __OFF );
+      }
+      
+      if ( AB_state ==  __IGNITION ) {
+        Force = 1;
+        SForce = 0;
+        AB_state = __RUNNING;
+      }
+    }
     else {
       if ( Force ) {
+        if ( ( pTHE ==  0.0 ) && ( pTHV == 0.0 ) && ( pTHC == 0.0 ) )
+          Force = __OFF;
         Relay_manager( __VIDEO , __ON );
         Relay_manager( __REAR , __ON );
         Relay_manager( __FRONT , __ON );
@@ -1498,6 +1577,15 @@ void  Controller( void ) {
         Relay_manager( __REAR , __OFF );
         Relay_manager( __FRONT , __OFF );
         Relay_manager( __NOT_USED , __OFF );
+      }
+      if ( AB_state ==  __SWITCH_OFF ) {
+        Force = 0;
+        VEnable = 0;
+        REnable = 0;
+        FEnable = 0;
+        NEnable = 0;
+        SForce = 0;
+        AB_state = __INACTIVE;
       }
     }
   }
@@ -1941,14 +2029,14 @@ void setup(void) {
     Serial.println();
     Serial.println("---------------------------------------------------");
   }
-  if ( __TERMINAL != __PLOT )
-    showHelp();
+//  if ( __TERMINAL != __PLOT )
+//    showHelp();
   _L_SET( 8 , 0 , 0 , 0 );
   _L_SET( 7 , 0 , 0 , 0 );
   _L_SET( 6 , 0 , 0 , 0 );
   _L_SET( 5 , 0 , 0 , 0 );
   _L_UPDATE;
-  delay(2000);
+//  delay(2000);
   if ( __TERMINAL != __PLOT ) {
     if ( __CONTENT == __TABLE ) {
       for( byte a = 0; a < 40 ; a++ )
@@ -1969,12 +2057,14 @@ void loop(void) {
   
   commandAcq();
   tempRead();
+  airBomb_controller();
   Controller();
   ledController();
   serOutput();
   if ( __ERROR_CHECK == __ENABLE )
     SensErrorCheck();
   commandProcess();
+  
   
   //  ------------------------------------------------------------------- Delay
   cycles = millis() / 1000;
