@@ -38,7 +38,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.10-151"
+#define RFC_VERSION         "1.10-171"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -331,8 +331,8 @@ void __escape_code_comp( unsigned char code ) {
 //  ------------------------------------------------------------------- RFC DEFINES
 #define THE_ACTIVATION      ( aTHA + 12.0 )
 #define THE_DEACTIVATION    ( aTHA + 7.0 )
-#define THV_ACTIVATION      ( aTHA + 25.0 ) // 45.0
-#define THV_DEACTIVATION    ( aTHA + 15.0 ) // 40.0
+#define THV_ACTIVATION      ( aTHA + 30.0 ) // 45.0
+#define THV_DEACTIVATION    ( aTHA + 20.0 ) // 40.0
 #define THC_ACTIVATION      ( aTHA + 25.0 ) // 42.0
 #define THC_DEACTIVATION    ( aTHA + 15.0 ) // 40.0
 
@@ -492,17 +492,25 @@ Thermistor* cpu = new AverageThermistor( oCPU , TH_ANAL_AVERAGE , 1 );
 
 //  ------------------------------------------------------------------- AIR BOMB DEFINES
 
+#define __AIR_BOMB              __OFF
+
 #define __INACTIVE              0
 #define __CHARGING              1 
 #define __IGNITION              2                           // Gestito dalla Controller
 #define __RUNNING               3
 #define __SWITCH_OFF            4                           // Gestito dalla Controller
+#define __DISABLED              10
 
 #define __AB_THRESHOLD          30.0
-#define __AB_TIMEOUT            5                          //  Espresso in minuti
+#define __AB_TIMEOUT            5                           //  Espresso in minuti
 
 unsigned long AB_time = millis();
-byte AB_state = __INACTIVE;
+#if ( __AIR_BOMB ==  __ON )
+  byte AB_state = __INACTIVE;
+#else
+  byte AB_state = __DISABLED;
+#endif
+  
 byte AB_force = __OFF;
 
 //  ------------------------------------------------------------------- LED REFERENCE VALUE
@@ -1014,19 +1022,25 @@ void printTable( void ) {
     Serial.println();
     Serial.print("\tAir Bomb:\t\t");
     if ( AB_state ==  __INACTIVE ) {
-      __SERPRINT( "Inactive  " );
+      __SERPRINT( "Inactive               " );
     }
     else if ( AB_state ==  __CHARGING ) {
-      __SERBLC(   "Charging  ", __BRIGHT_YELLOW );
+      __SERBLC(   "Charging -", __BRIGHT_YELLOW );
+      printDigits( ( ( ( __AB_TIMEOUT * 60 ) - ( ( millis() - AB_time) / 1000 ) ) / 60 ) % 60 );
+      __SERPRINT( ":" );
+      printDigits( ( ( __AB_TIMEOUT * 60 ) - ( ( millis() - AB_time) / 1000 ) ) % 60 );
     }
     else if ( AB_state ==  __RUNNING ) {
-      __SERBLC(   "RUNNING   ", __BRIGHT_RED );
+      __SERBLC(   "RUNNING                ", __BRIGHT_RED );
     }
     else if ( AB_state ==  __IGNITION ) {
-      __SERCOLOR( "Ignition  ", __BRIGHT_YELLOW );
+      __SERCOLOR( "Ignition               ", __BRIGHT_YELLOW );
     }
     else if ( AB_state ==  __SWITCH_OFF ) {
-      __SERCOLOR( "Switch off", __BRIGHT_YELLOW );
+      __SERCOLOR( "Switch off             ", __BRIGHT_YELLOW );
+    }
+    else if ( AB_state ==  __DISABLED ) {
+      __SERPRINT( "Disabled               " );
     }
     __BLANK;
     Serial.println();
@@ -1489,42 +1503,48 @@ void  Relay_manager( int ch , int st ) {
 
 
 void airBomb_controller( void ) {
-  if ( AB_state ==  __INACTIVE ) {
-    if ( ( pTHE > __AB_THRESHOLD ) && ( pTHV > __AB_THRESHOLD ) && ( pTHC > __AB_THRESHOLD ) ) {
-      if ( ( Rvd == __OFF ) && ( Rrr == __OFF ) && ( Rfr == __OFF ) ) {
-        AB_state = __CHARGING;
-        AB_time = millis();
+  if ( __AIR_BOMB ==  __ON ) {
+    if ( AB_state ==  __INACTIVE ) {
+      if ( ( pTHE > __AB_THRESHOLD ) && ( pTHV > __AB_THRESHOLD ) && ( pTHC > __AB_THRESHOLD ) ) {
+//      if ( pTHGen > 5.0 ) {
+        if ( ( Rvd == __OFF ) && ( Rrr == __OFF ) && ( Rfr == __OFF ) ) {
+          AB_time = millis();
+          AB_state = __CHARGING;
+        }
       }
     }
-  }
-  else if ( AB_state ==  __CHARGING ) {
-    if ( ( pTHE < __AB_THRESHOLD ) || ( pTHV < __AB_THRESHOLD ) || ( pTHC < __AB_THRESHOLD ) )
-      AB_state = __INACTIVE;
-    else if ( ( Rvd == __ON ) || ( Rrr == __ON ) || ( Rfr == __ON ) ) {
-      AB_state = __INACTIVE;
+    else if ( AB_state ==  __CHARGING ) {
+      if ( pTHGen < 15.0 )
+        AB_state = __INACTIVE;
+      else if ( ( Rvd == __ON ) || ( Rrr == __ON ) || ( Rfr == __ON ) ) {
+        AB_state = __INACTIVE;
+      }
+      else {
+        if ( ( ( millis() - AB_time ) / 1000 ) > ( __AB_TIMEOUT * 60 ) )
+          AB_state = __IGNITION;
+      }
     }
-    else {
-      if ( ( millis() - AB_time) > ( __AB_TIMEOUT * 60 * 1000 ) )
-        AB_state = __IGNITION;
+    else if ( AB_state == __RUNNING ) {
+      if ( pTHGen == 0.0 )
+        AB_state = __SWITCH_OFF;
     }
   }
-  else if ( AB_state == __RUNNING ) {
-    if ( ( pTHE ==  0.0 ) && ( pTHV == 0.0 ) && ( pTHC == 0.0 ) )
-      AB_state = __SWITCH_OFF;
-  }
+  else
+    AB_state ==  __DISABLED;
 }
 
 
 void  Controller( void ) {
+  static byte first = __ON;
   if ( cycles < 15 ) {
     AutoInit = __OFF;
-  } 
+  }
   else {
     AutoInit = __ON;
   }
 
   if ( AutoInit == __ON ) {
-    if ( ! Force  ) {
+    if ( Force ==  __OFF ) {
       contr = __ON;
     }
     else {
@@ -1532,6 +1552,14 @@ void  Controller( void ) {
     }
       
     if ( contr == __ON ) {
+#if ( __AIR_BOMB ==  __ON )     
+      if ( ( first ==  __ON ) && ( pTHGen > 30 ) ) {
+        Force = 1;
+        SForce = 0;
+        AB_state = __RUNNING;
+        first = __OFF;
+      }
+#endif
       Relay_manager( __NOT_USED , __OFF );
 	//  ----------------------------------------  TH Environment
       if ( aTHE > THE_ACTIVATION ) {
@@ -2057,7 +2085,9 @@ void loop(void) {
   
   commandAcq();
   tempRead();
+#if ( __AIR_BOMB == __ON )
   airBomb_controller();
+#endif
   Controller();
   ledController();
   serOutput();
