@@ -38,7 +38,7 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.10-171"
+#define RFC_VERSION         "1.10-193"
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
 #define __OFF       0
@@ -329,12 +329,12 @@ void __escape_code_comp( unsigned char code ) {
                                     }                        \
 
 //  ------------------------------------------------------------------- RFC DEFINES
-#define THE_ACTIVATION      ( aTHA + 12.0 )
-#define THE_DEACTIVATION    ( aTHA + 7.0 )
-#define THV_ACTIVATION      ( aTHA + 30.0 ) // 45.0
-#define THV_DEACTIVATION    ( aTHA + 20.0 ) // 40.0
-#define THC_ACTIVATION      ( aTHA + 25.0 ) // 42.0
-#define THC_DEACTIVATION    ( aTHA + 15.0 ) // 40.0
+#define THE_ACTIVATION      ( aTHA + 15.0 )
+#define THE_DEACTIVATION    ( aTHA + 8.0 )
+#define THV_ACTIVATION      ( aTHA + 28.0 ) // 45.0
+#define THV_DEACTIVATION    ( aTHA + 18.0 ) // 40.0
+#define THC_ACTIVATION      ( aTHA + 23.0 ) // 42.0
+#define THC_DEACTIVATION    ( aTHA + 16.0 ) // 40.0
 
 #define __ERROR_STOP        while(1)
 
@@ -372,22 +372,10 @@ unsigned char Tdigit = SERIAL_DIGIT;
 #define __OLD         1
 #define __NEW         2
 
-#define __READING     __NEW
-
-#if ( __READING == __OLD )
-  #if ( __TERMINAL == __PLOT )
-    #define __RESOLUTION  12
-  #else
-    #define __RESOLUTION  9
-  #endif
-  #define __AVG_READ    4
-  
-#elif ( __READING == __NEW )
-  #if ( __TERMINAL == __PLOT )
-    #define __RESOLUTION  12
-  #else
-    #define __RESOLUTION  11
-  #endif
+#if ( __TERMINAL == __PLOT )
+  #define __RESOLUTION  12
+#else
+  #define __RESOLUTION  11
 #endif
 
 #if ( __TERMINAL == __PLOT )
@@ -460,9 +448,15 @@ float oTHV = 0.0;
 float oTHC = 0.0;
 float oTHDrv = 0.0;
 
-float mTHE = 0.0;
-float mTHV = 0.0;
-float mTHC = 0.0;
+float MTHA = 0.0;
+float MTHE = 0.0;
+float MTHV = 0.0;
+float MTHC = 0.0;
+
+float mTHA = 100.0;
+float mTHE = 100.0;
+float mTHV = 100.0;
+float mTHC = 100.0;
 
 float pTHA = 0.0;
 float pTHE = 0.0;
@@ -589,8 +583,8 @@ void  SensErrorCheck( void ) {
 //  ------------------------------------------------------------------- RELAY DEFINES
 #define RELAY_DLY   250
 
-#define __VIDEO     5
-#define __REAR      4   // 7
+#define __VIDEO     4
+#define __REAR      5   // 7
 #define __FRONT     7   // 4
 #define __NOT_USED  6
 
@@ -866,15 +860,15 @@ void printLine( void )  {
       __NORMAL;
       Serial.print(" - Me/Mv/Mc: ");
       __BOLD;
-      Serial.print(mTHE , Tdigit );
+      Serial.print(MTHE , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(mTHV , Tdigit );
+      Serial.print(MTHV , Tdigit );
       __NORMAL;
       Serial.print("/");
       __BOLD;
-      Serial.print(mTHC , Tdigit );
+      Serial.print(MTHC , Tdigit );
 
       __NORMAL;
       Serial.print("  -  ");
@@ -964,7 +958,7 @@ void printTable( void ) {
 
   if ( (  __SCROLL == __OFF ) && ( __TERMINAL != __INTERNAL ) ) {
     Serial.println("\e[1K");
-    Serial.print("\e[27A");
+    Serial.print("\e[30A");
   }
 
   Serial.print("Proxima Fan contr - Version: " );
@@ -985,6 +979,7 @@ void printTable( void ) {
   Serial.println( "  !asyntote [gKript.org] 2020" );
   Serial.println();
 
+  // ------------------------------------------------------------------------------------------------------------------------
   Serial.println("CONTROLLER:");
     Serial.print("\tStatus:\t\t\t");
       __SERBLCE   ( AutoInit  , __OFF , "Init  ", __BRIGHT_YELLOW )
@@ -1046,13 +1041,21 @@ void printTable( void ) {
     Serial.println();
   Serial.println();
 
-  Serial.print("ROOM:");
-    Serial.print("\tTemperature: \t\t");
+  // ------------------------------------------------------------------------------------------------------------------------
+  __SERPRINT("ROOM:");
+    __SERPRINT("\tTemperature: \t\t");
       __SERCOLOR2( aTHA , Tdigit , __BRIGHT_WHITE );
       __BLANK;
-    Serial.println();
-  Serial.println();
+      __SERPRINT("\t");
+      __SERPRINT(" - Min/Max:\t\t");
+      __SERCOLOR2( mTHA , Tdigit , __BRIGHT_WHITE );
+      __SERPRINT("/");
+      __SERCOLOR2( MTHA , Tdigit , __BRIGHT_WHITE );
+      __BLANK;
+    __SERPRINTLN();
+  __SERPRINTLN();
 
+  // ------------------------------------------------------------------------------------------------------------------------
   Serial.print("CASE:");
     Serial.print("\tFan status:\t\t");
       if ( Rfr == __ON ) {
@@ -1107,8 +1110,20 @@ void printTable( void ) {
       else __SERPRINT2( aTHE - THE_DEACTIVATION , Tdigit );
       __BLANK;
     Serial.println();
+    Serial.print("\tTh Minimum:\t\t");
+      __SERPRINT2( mTHE , Tdigit );
+      __BLANK;
+      Serial.print("\t");
+      Serial.print(" - Th Maximum:\t\t");
+      __SERCH2( MTHE, THE_ACTIVATION, MTHE, Tdigit, __BRIGHT_RED )
+      else {
+        __SERPRINT2( MTHE , Tdigit );
+      }
+      __BLANK;
+    Serial.println();
   Serial.println();
 
+  // ------------------------------------------------------------------------------------------------------------------------
   Serial.print("VIDEO:");
     Serial.print("\tFan status:\t\t");
       if ( Rvd == __ON ) {
@@ -1163,8 +1178,20 @@ void printTable( void ) {
       else __SERPRINT2( aTHV - THV_DEACTIVATION , Tdigit );
       __BLANK;
     Serial.println();
+    Serial.print("\tTh Minimum:\t\t");
+      __SERPRINT2( mTHV , Tdigit );
+      __BLANK;
+      Serial.print("\t");
+      Serial.print(" - Th Maximum:\t\t");
+      __SERCH2( MTHV, THV_ACTIVATION, MTHV, Tdigit, __BRIGHT_RED )
+      else {
+        __SERPRINT2( MTHV , Tdigit );
+      }
+      __BLANK;
+    Serial.println();
   Serial.println();
 
+  // ------------------------------------------------------------------------------------------------------------------------
   Serial.print("CPU:");
     Serial.print("\tFan status:\t\t");
       if ( Rrr == __ON ) {
@@ -1219,18 +1246,31 @@ void printTable( void ) {
       else __SERPRINT2( aTHC - THC_DEACTIVATION , Tdigit );
       __BLANK;
     Serial.println();
-    Serial.println();
-    
-    __SERPRINT( "\tInsert a valid command [h for help] : " );
-    if ( inByte ) {
-      __SERCOLOR( char(inByte) , __BRIGHT_YELLOW );
+    Serial.print("\tTh Minimum:\t\t");
+      __SERPRINT2( mTHC , Tdigit );
       __BLANK;
-      delay(1000);
-    }
-    else
-      __SERPRINT( "_" );
-    
+      Serial.print("\t");
+      Serial.print(" - Th Maximum:\t\t");
+      __SERCH2( MTHC, THC_ACTIVATION, MTHC, Tdigit, __BRIGHT_RED )
+      else {
+        __SERPRINT2( MTHC , Tdigit );
+      }
+      __BLANK;
+    Serial.println();
   Serial.println();
+
+  // ------------------------------------------------------------------------------------------------------------------------
+  __SERPRINT( "\tInsert a valid command [h for help] : " );
+  if ( inByte ) {
+    __SERCOLOR( char(inByte) , __BRIGHT_YELLOW );
+    __BLANK;
+    delay(1000);
+  }
+  else
+    __SERPRINT( "_" );
+  Serial.println();
+
+  // ------------------------------------------------------------------------------------------------------------------------
 }
 
 
@@ -1397,109 +1437,92 @@ void  Relay_manager( int ch , int st ) {
     delay( RELAY_DLY );
 }
 
-#if ( __READING == __OLD ) 
 
-  void tempRead( void ) {
-    for( int a = 0; a < __AVG_READ ; a++ ) {
-      sensors.requestTemperatures();
-      aTHV += sensors.getTempC( THvideo );
-      aTHE += sensors.getTempC( THenvrm );
-    }
-    aTHV /= __AVG_READ;
-    aTHE /= __AVG_READ;
+void tempRead( void ) {
+  sensors.requestTemperatures();
+  THV_s[ id ] = sensors.getTempC( THvideo );
+  THE_s[ id ] = sensors.getTempC( THenvrm );
+  THC_s[ id ] = cpu->readCelsius();
+  //  ---------------------------------------  MAX values update 
+  if ( aTHE > MTHE ) MTHE = aTHE;
+  if ( aTHV > MTHV ) MTHV = aTHV;
+  if ( aTHC > MTHC ) MTHC = aTHC;
+  if ( THE_s[ id ] < mTHE ) mTHE = THE_s[ id ];
+  if ( THV_s[ id ] < mTHV ) mTHV = THV_s[ id ];
+  if ( THC_s[ id ] < mTHC ) mTHC = THC_s[ id ];
+
+  #if ( __AMB_AVERAGED == __YES )
+    THA_s[ id ] = sensors.getTempC( THambnt );
+    if ( THA_s[ id ] < mTHA ) mTHA = THA_s[ id ];
+    if ( THA_s[ id ] > MTHA ) MTHA = THA_s[ id ];
+  #else
     if ( time_amb == __RESET )
       time_amb = millis();
     else if ( ( millis() - time_amb ) >= __AMB_TIME ) {
       aTHA = sensors.getTempC( THambnt );
       time_amb = __RESET;
     }
-    if ( aTHC > mTHC ) mTHC = aTHC;
-    if ( aTHV > mTHV ) mTHV = aTHV;
-    if ( aTHE > mTHE ) mTHE = aTHE;
-  }
+    if ( aTHA < mTHA ) mTHA = aTHA;
+    if ( aTHA > MTHA ) MTHA = aTHA;
+  # endif
 
-#elif ( __READING == __NEW ) 
-
-  void tempRead( void ) {
-    sensors.requestTemperatures();
-    THV_s[ id ] = sensors.getTempC( THvideo );
-    THE_s[ id ] = sensors.getTempC( THenvrm );
-    THC_s[ id ] = cpu->readCelsius();
+  for( int a = 0; a < TH_AVERAGE ; a++ ) {
+    aTHE += THE_s[a];
+    aTHV += THV_s[a];
+    aTHC += THC_s[a];
     #if ( __AMB_AVERAGED == __YES )
-      THA_s[ id ] = sensors.getTempC( THambnt );
-    #else
-      if ( time_amb == __RESET )
-        time_amb = millis();
-      else if ( ( millis() - time_amb ) >= __AMB_TIME ) {
-        aTHA = sensors.getTempC( THambnt );
-        time_amb = __RESET;
-      }
-    # endif      
-    for( int a = 0; a < TH_AVERAGE ; a++ ) {
-      aTHE += THE_s[a];
-      aTHV += THV_s[a];
-      aTHC += THC_s[a];
-      #if ( __AMB_AVERAGED == __YES )
-        aTHA += THA_s[a];
-      #endif
-    }
-    #if ( __AMB_AVERAGED == __YES )
-      aTHA /= (float)TH_AVERAGE;
+      aTHA += THA_s[a];
     #endif
-    aTHE /= (float)TH_AVERAGE;
-    aTHV /= (float)TH_AVERAGE;
-    aTHC /= (float)TH_AVERAGE;
-    
-//  --------------------------------------- Drv
-    if ( AutoInit == __ON ) {
-      THEDrv_s[ iddrv ] = aTHE - oTHE;
-      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
-        aTHEDrv += THEDrv_s[a];
-      }
-      aTHEDrv /= (float)DRV_AVERAGE;
-      
-      THVDrv_s[ iddrv ] = aTHV - oTHV;
-      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
-        aTHVDrv += THVDrv_s[a];
-      }
-      aTHVDrv /= (float)DRV_AVERAGE;
-      
-      THCDrv_s[ iddrv ] = aTHC - oTHC;
-      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
-        aTHCDrv += THCDrv_s[a];
-      }
-      aTHCDrv /= (float)DRV_AVERAGE;
-      
-      THDrv_s[ iddrv ] = ( (float)( aTHEDrv + aTHVDrv + aTHCDrv ) / 3.0 ) - oTHDrv;
-      for( int a = 0; a < DRV_AVERAGE ; a++ ) {
-        aTHDrv += THDrv_s[a];
-      }
-      aTHDrv /= (float)DRV_AVERAGE;
+  }
+  #if ( __AMB_AVERAGED == __YES )
+    aTHA /= (float)TH_AVERAGE;
+  #endif
+  aTHE /= (float)TH_AVERAGE;
+  aTHV /= (float)TH_AVERAGE;
+  aTHC /= (float)TH_AVERAGE;
 
-      oTHE = aTHE;
-      oTHV = aTHV;
-      oTHC = aTHC;
-      oTHDrv = aTHDrv;
-
+  //  --------------------------------------- Drv
+  if ( AutoInit == __ON ) {
+    THEDrv_s[ iddrv ] = aTHE - oTHE;
+    for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+      aTHEDrv += THEDrv_s[a];
     }
-    else {
-      iddrv = 0;
-//      aTHDrv = 0;
-    }
+    aTHEDrv /= (float)DRV_AVERAGE;
     
-//  ---------------------------------------  Indexes: increments and limits
-    if ( ++id >= TH_AVERAGE )
-      id = 0;
-    if ( ++iddrv >= DRV_AVERAGE )
-      iddrv = 0;
+    THVDrv_s[ iddrv ] = aTHV - oTHV;
+    for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+      aTHVDrv += THVDrv_s[a];
+    }
+    aTHVDrv /= (float)DRV_AVERAGE;
+    
+    THCDrv_s[ iddrv ] = aTHC - oTHC;
+    for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+      aTHCDrv += THCDrv_s[a];
+    }
+    aTHCDrv /= (float)DRV_AVERAGE;
+    
+    THDrv_s[ iddrv ] = ( (float)( aTHEDrv + aTHVDrv + aTHCDrv ) / 3.0 ) - oTHDrv;
+    for( int a = 0; a < DRV_AVERAGE ; a++ ) {
+      aTHDrv += THDrv_s[a];
+    }
+    aTHDrv /= (float)DRV_AVERAGE;
 
-//  ---------------------------------------  MAX values update 
-    if ( aTHE > mTHE ) mTHE = aTHE;
-    if ( aTHV > mTHV ) mTHV = aTHV;
-    if ( aTHC > mTHC ) mTHC = aTHC;
+    oTHE = aTHE;
+    oTHV = aTHV;
+    oTHC = aTHC;
+    oTHDrv = aTHDrv;
+
+  }
+  else {
+    iddrv = 0;
   }
 
-#endif
+  //  ---------------------------------------  Indexes: increments and limits
+  if ( ++id >= TH_AVERAGE )
+    id = 0;
+  if ( ++iddrv >= DRV_AVERAGE )
+    iddrv = 0;
+}
 
 
 void airBomb_controller( void ) {
