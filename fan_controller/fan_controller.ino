@@ -1,6 +1,6 @@
 /*
  *  Reflection Fan contr 
- *    !V 2.x
+ *    !V 1.x
  *    !GPL V3
  *    
  *  gKript.org @ 09/2020 (R)
@@ -24,6 +24,13 @@
     \033[<N>D
 */
 
+//  ------------------------------------------------------------------- BASIC DEFINES
+
+#define __OFF       0
+#define __ON        1
+
+//  ------------------------------------------------------------------- INCLUDES
+
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <FastLED.h>
@@ -38,11 +45,20 @@
 
 FASTLED_USING_NAMESPACE
 
-#define RFC_VERSION         "1.10-193"
+#define RFC_VERSION         "1.10-261"
+
 
 //  ------------------------------------------------------------------- GENERAL DEFINES
-#define __OFF       0
-#define __ON        1
+
+#define __AIR     0
+#define __LIQUID  1
+
+#define __CPU_COOLER    __LIQUID                            // Tipo di dissipazione termica CPU
+
+#define __FAN_CONTROL   __OFF
+
+#define __LIQUID_OFFSET 5.00
+
 #define __FOFF      -1
 #define __RESET     -1
 
@@ -58,7 +74,7 @@ FASTLED_USING_NAMESPACE
 
 #define __TERMINAL    __TTTERM
 
-#define __CONTENT     __TABLE
+#define __CONTENT     __TABLE                                //__TABLE
 
 
 #if ( __TERMINAL == __INTERNAL )
@@ -329,12 +345,19 @@ void __escape_code_comp( unsigned char code ) {
                                     }                        \
 
 //  ------------------------------------------------------------------- RFC DEFINES
-#define THE_ACTIVATION      ( aTHA + 15.0 )
-#define THE_DEACTIVATION    ( aTHA + 8.0 )
-#define THV_ACTIVATION      ( aTHA + 28.0 ) // 45.0
-#define THV_DEACTIVATION    ( aTHA + 18.0 ) // 40.0
-#define THC_ACTIVATION      ( aTHA + 23.0 ) // 42.0
-#define THC_DEACTIVATION    ( aTHA + 16.0 ) // 40.0
+#define THE_ACTIVATION      ( ( aTHA / 2 ) + 19.0 )          // Temperatura del CASE
+#define THE_DEACTIVATION    ( ( aTHA / 2 ) + 14.0 )          // ----
+#define THV_ACTIVATION      ( ( aTHA / 2 ) + 26.0 )          // Temperature della SCHEDA VIDEO
+#define THV_DEACTIVATION    ( ( aTHA / 2 ) + 21.0 )          // ----
+
+#if ( __CPU_COOLER ==  __AIR )
+  #define THC_ACTIVATION      ( ( aTHA / 2 ) + 20.0 )        // Temperatura della CPU
+  #define THC_DEACTIVATION    ( ( aTHA / 2 ) + 16.0 )        // ----
+#elif ( __CPU_COOLER ==  __LIQUID )
+  // Temperatura della CPU
+  #define THC_ACTIVATION      ( ( ( aTHA / 3 ) + __LIQUID_OFFSET ) + 25.0 )
+  #define THC_DEACTIVATION    ( ( ( aTHA / 3 ) + __LIQUID_OFFSET ) + 21.0 )
+#endif
 
 #define __ERROR_STOP        while(1)
 
@@ -344,8 +367,6 @@ unsigned long               Texe = 0;
 
 int inByte = 0;
 
-#define __ENABLE            0
-#define __DISABLE           1
 
 int AutoInit = __OFF;  
 int    Force = 0;             //  Force Generale  (accende)
@@ -372,6 +393,9 @@ unsigned char Tdigit = SERIAL_DIGIT;
 #define __OLD         1
 #define __NEW         2
 
+#define __ENABLE      0
+#define __DISABLE     1
+
 #if ( __TERMINAL == __PLOT )
   #define __RESOLUTION  12
 #else
@@ -386,8 +410,8 @@ unsigned char Tdigit = SERIAL_DIGIT;
 
 #define __ERROR_CHECK   __ENABLE
 
-#define __THERMAL_SMOOTH_FACTOR       50
-#define __DERIVATIVE_SMOOTH_FACTOR    30
+#define __THERMAL_SMOOTH_FACTOR       30
+#define __DERIVATIVE_SMOOTH_FACTOR    15
 
 #if ( __TERMINAL == __PLOT )
   #define TH_AVERAGE        __THERMAL_SMOOTH_FACTOR
@@ -415,7 +439,7 @@ DeviceAddress       THambnt;
 int id = 0;
 int iddrv = 0;
 
-#define             __AMB_AVERAGED        __NO
+#define             __AMB_AVERAGED        __YES
 #define             __AMB_TIME            9500
 
 unsigned long       time_amb = __RESET;
@@ -584,8 +608,8 @@ void  SensErrorCheck( void ) {
 #define RELAY_DLY   250
 
 #define __VIDEO     4
-#define __REAR      5   // 7
-#define __FRONT     7   // 4
+#define __REAR      5
+#define __FRONT     7
 #define __NOT_USED  6
 
 #define __NORMALY_OPENED  false
@@ -618,7 +642,7 @@ byte Rnu = __OFF;
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
 #define NUM_LEDS    10
-#define BRIGHTNESS  48
+#define BRIGHTNESS  96
 
 CRGB leds[NUM_LEDS];
 
@@ -808,12 +832,18 @@ void avg_reset( void ) {
 void bigFail( void ) {
   byte r = 0;
   _ALL_LED_OFF;
+//  Relay_manager( __VIDEO , __ON );
+//  Relay_manager( __REAR , __ON );
+//  Relay_manager( __FRONT , __ON );
   __ERROR_STOP {
     commandAcq();
+    commandProcessBF();
     _L_ERROR_ON( _LN_ON );
     _L_ERROR_ON( _LN_CNTR );
     _L_UPDATE;
     delay( 750 );
+    commandAcq();
+    commandProcessBF();
     _L_ERROR_OFF( _LN_ON );
     _L_ERROR_OFF( _LN_CNTR );
     _L_UPDATE;
@@ -1075,18 +1105,20 @@ void printTable( void ) {
       __SERPRINT( "%" );
       __BLANK;
     Serial.println();
-    Serial.print("\tTh Activation:\t\t");
-      __SERPRINT2( THE_ACTIVATION , Tdigit );
-      __BLANK;
-      Serial.print("\t");
-      Serial.print(" - Activation gap:\t");
-      __SERCL( abs( THE_ACTIVATION - aTHE ) , 0 , "Hihger", __BRIGHT_RED )
-      else __SERBLCL2( abs( THE_ACTIVATION - aTHE ) , 1 ,  ( THE_ACTIVATION - aTHE ) , Tdigit , __BRIGHT_YELLOW )
-      else {
-        __SERPRINT2( THE_ACTIVATION - aTHE , Tdigit );
-      }
-      __BLANK;
-    Serial.println();
+    if (__FAN_CONTROL ) {
+      Serial.print("\tTh Activation:\t\t");
+        __SERPRINT2( THE_ACTIVATION , Tdigit );
+        __BLANK;
+        Serial.print("\t");
+        Serial.print(" - Activation gap:\t");
+        __SERCL( abs( THE_ACTIVATION - aTHE ) , 0 , "Hihger", __BRIGHT_RED )
+        else __SERBLCL2( abs( THE_ACTIVATION - aTHE ) , 1 ,  ( THE_ACTIVATION - aTHE ) , Tdigit , __BRIGHT_YELLOW )
+        else {
+          __SERPRINT2( THE_ACTIVATION - aTHE , Tdigit );
+        }
+        __BLANK;
+      Serial.println();
+    }
     Serial.print("\tTemperature:\t\t");
       __SERCOLOR2( aTHE , Tdigit , __BRIGHT_WHITE );
       __BLANK;
@@ -1101,15 +1133,17 @@ void printTable( void ) {
       }
       __BLANK;
     Serial.println();
-    Serial.print("\tTh Deactivation:\t");
-      __SERPRINT2( THE_DEACTIVATION , Tdigit );
-      __BLANK;
-      Serial.print("\t");
-      Serial.print(" - Deactivation gap:\t");
-      __SERCL( aTHE - THE_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
-      else __SERPRINT2( aTHE - THE_DEACTIVATION , Tdigit );
-      __BLANK;
-    Serial.println();
+    if (__FAN_CONTROL ) {
+      Serial.print("\tTh Deactivation:\t");
+        __SERPRINT2( THE_DEACTIVATION , Tdigit );
+        __BLANK;
+        Serial.print("\t");
+        Serial.print(" - Deactivation gap:\t");
+        __SERCL( aTHE - THE_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
+        else __SERPRINT2( aTHE - THE_DEACTIVATION , Tdigit );
+        __BLANK;
+      Serial.println();
+    }
     Serial.print("\tTh Minimum:\t\t");
       __SERPRINT2( mTHE , Tdigit );
       __BLANK;
@@ -1143,18 +1177,20 @@ void printTable( void ) {
       __SERPRINT( "%" );
       __BLANK;
     Serial.println();
-    Serial.print("\tTh Activation:\t\t");
-      __SERPRINT2( THV_ACTIVATION , Tdigit );
-      __BLANK;
-      Serial.print("\t");
-      Serial.print(" - Activation gap:\t");
-      __SERCL( abs( THV_ACTIVATION - aTHV ) , 0 ,   "Hihger", __BRIGHT_RED )
-      else __SERBLCL2( abs( THV_ACTIVATION - aTHV ) , 1 ,  ( THV_ACTIVATION - aTHV ) , Tdigit , __BRIGHT_YELLOW )
-      else {
-        __SERPRINT2( THV_ACTIVATION - aTHV , Tdigit );
-      }
-      __BLANK;
-    Serial.println();
+    if (__FAN_CONTROL ) {
+      Serial.print("\tTh Activation:\t\t");
+        __SERPRINT2( THV_ACTIVATION , Tdigit );
+        __BLANK;
+        Serial.print("\t");
+        Serial.print(" - Activation gap:\t");
+        __SERCL( abs( THV_ACTIVATION - aTHV ) , 0 ,   "Hihger", __BRIGHT_RED )
+        else __SERBLCL2( abs( THV_ACTIVATION - aTHV ) , 1 ,  ( THV_ACTIVATION - aTHV ) , Tdigit , __BRIGHT_YELLOW )
+        else {
+          __SERPRINT2( THV_ACTIVATION - aTHV , Tdigit );
+        }
+        __BLANK;
+      Serial.println();
+    }
     Serial.print("\tTemperature:\t\t");
       __SERCOLOR2( aTHV , Tdigit , __BRIGHT_WHITE );
       __BLANK;
@@ -1169,15 +1205,17 @@ void printTable( void ) {
       }
       __BLANK;
     Serial.println();
-    Serial.print("\tTh Deactivation:\t");
-      __SERPRINT2( THV_DEACTIVATION , Tdigit );
-      __BLANK;
-      Serial.print("\t");
-      Serial.print(" - Deactivation gap:\t");
-      __SERCL( aTHV - THV_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
-      else __SERPRINT2( aTHV - THV_DEACTIVATION , Tdigit );
-      __BLANK;
-    Serial.println();
+    if (__FAN_CONTROL ) {
+      Serial.print("\tTh Deactivation:\t");
+        __SERPRINT2( THV_DEACTIVATION , Tdigit );
+        __BLANK;
+        Serial.print("\t");
+        Serial.print(" - Deactivation gap:\t");
+        __SERCL( aTHV - THV_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
+        else __SERPRINT2( aTHV - THV_DEACTIVATION , Tdigit );
+        __BLANK;
+      Serial.println();
+    }
     Serial.print("\tTh Minimum:\t\t");
       __SERPRINT2( mTHV , Tdigit );
       __BLANK;
@@ -1211,18 +1249,20 @@ void printTable( void ) {
       __SERPRINT( "%" );
       __BLANK;
     Serial.println();
-    Serial.print("\tTh Activation:\t\t");
-      __SERPRINT2( THC_ACTIVATION , Tdigit );
-      __BLANK;
-      Serial.print("\t");
-      Serial.print(" - Activation gap:\t");
-      __SERCL( abs( THC_ACTIVATION - aTHC ) , 0 ,   "Hihger", __BRIGHT_RED )
-      else __SERBLCL2( abs( THC_ACTIVATION - aTHC ) , 1 ,  ( THC_ACTIVATION - aTHC ) , Tdigit , __BRIGHT_YELLOW )
-      else {
-        __SERPRINT2( THC_ACTIVATION - aTHC , Tdigit );
-      }
-      __BLANK;
-    Serial.println();
+    if (__FAN_CONTROL ) {
+      Serial.print("\tTh Activation:\t\t");
+        __SERPRINT2( THC_ACTIVATION , Tdigit );
+        __BLANK;
+        Serial.print("\t");
+        Serial.print(" - Activation gap:\t");
+        __SERCL( abs( THC_ACTIVATION - aTHC ) , 0 ,   "Hihger", __BRIGHT_RED )
+        else __SERBLCL2( abs( THC_ACTIVATION - aTHC ) , 1 ,  ( THC_ACTIVATION - aTHC ) , Tdigit , __BRIGHT_YELLOW )
+        else {
+          __SERPRINT2( THC_ACTIVATION - aTHC , Tdigit );
+        }
+        __BLANK;
+      Serial.println();
+    }
     Serial.print("\tTemperature:\t\t");
       __SERCOLOR2( aTHC , Tdigit , __BRIGHT_WHITE );
       __BLANK;
@@ -1237,15 +1277,17 @@ void printTable( void ) {
       }
       __BLANK;
     Serial.println();
-    Serial.print("\tTh Deactivation:\t");
-      __SERPRINT2( THC_DEACTIVATION , Tdigit );
-      __BLANK;
-      Serial.print("\t");
-      Serial.print(" - Deactivation gap:\t");
-      __SERCL( aTHC - THC_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
-      else __SERPRINT2( aTHC - THC_DEACTIVATION , Tdigit );
-      __BLANK;
-    Serial.println();
+    if (__FAN_CONTROL ) {
+      Serial.print("\tTh Deactivation:\t");
+        __SERPRINT2( THC_DEACTIVATION , Tdigit );
+        __BLANK;
+        Serial.print("\t");
+        Serial.print(" - Deactivation gap:\t");
+        __SERCL( aTHC - THC_DEACTIVATION, 0, "Lower", __BRIGHT_BLUE)
+        else __SERPRINT2( aTHC - THC_DEACTIVATION , Tdigit );
+        __BLANK;
+      Serial.println();
+    }
     Serial.print("\tTh Minimum:\t\t");
       __SERPRINT2( mTHC , Tdigit );
       __BLANK;
@@ -1377,64 +1419,66 @@ void  clearScreen( void ) {
 
 
 void  Relay_manager( int ch , int st ) {
-  byte mod = 0;
-  switch ( ch ) {
-    case __VIDEO : {
-      if ( Rvd != st ) {
-        Rvd = st;
-        if ( st == __ON ) {
-          RVideo.turnOn();
-        } else {
-          RVideo.turnOff();
+  if ( __FAN_CONTROL ) {
+    byte mod = 0;
+    switch ( ch ) {
+      case __VIDEO : {
+        if ( Rvd != st ) {
+          Rvd = st;
+          if ( st == __ON ) {
+            RVideo.turnOn();
+          } else {
+            RVideo.turnOff();
+          }
+          mod = 1;
         }
-        mod = 1;
+        break;
       }
-      break;
-    }
-    case __REAR : {
-      if ( Rrr != st ) {
-        Rrr = st;
-        if ( st == __ON ) {
-          RRear.turnOn();
-          _L_FF_ON;
-        } else {
-          RRear.turnOff();
-          _L_FF_OFF;
+      case __REAR : {
+        if ( Rrr != st ) {
+          Rrr = st;
+          if ( st == __ON ) {
+            RRear.turnOn();
+            _L_FF_ON;
+          } else {
+            RRear.turnOff();
+            _L_FF_OFF;
+          }
+          mod = 1;
         }
-        mod = 1;
+        break;
       }
-      break;
-    }
-    case __FRONT : {
-      if ( Rfr != st ) {
-        Rfr = st;
-        if ( st == __ON ) {
-          RFront.turnOn();
-          _L_FT_ON;
-        } else {
-          RFront.turnOff();
-          _L_FT_OFF;
+      case __FRONT : {
+        if ( Rfr != st ) {
+          Rfr = st;
+          if ( st == __ON ) {
+            RFront.turnOn();
+            _L_FT_ON;
+          } else {
+            RFront.turnOff();
+            _L_FT_OFF;
+          }
+          mod = 1;
         }
-        mod = 1;
+        break;
       }
-      break;
+  /*    case __NOT_USED : {
+        if ( Rnu != st ) {
+          Rnu = st;
+          if ( st == __ON ) {
+            //quadRelay.turnRelayOn(  __NOT_USED );
+          } else {
+            //quadRelay.turnRelayOff( __NOT_USED );
+          }
+          mod = 1;
+      }
+        break;
+      }
+  */
     }
-/*    case __NOT_USED : {
-      if ( Rnu != st ) {
-        Rnu = st;
-        if ( st == __ON ) {
-          //quadRelay.turnRelayOn(  __NOT_USED );
-        } else {
-          //quadRelay.turnRelayOff( __NOT_USED );
-        }
-        mod = 1;
-    }
-      break;
-    }
-*/
+    if ( mod )
+      delay( RELAY_DLY );
   }
-  if ( mod )
-    delay( RELAY_DLY );
 }
 
 
@@ -1447,14 +1491,15 @@ void tempRead( void ) {
   if ( aTHE > MTHE ) MTHE = aTHE;
   if ( aTHV > MTHV ) MTHV = aTHV;
   if ( aTHC > MTHC ) MTHC = aTHC;
-  if ( THE_s[ id ] < mTHE ) mTHE = THE_s[ id ];
-  if ( THV_s[ id ] < mTHV ) mTHV = THV_s[ id ];
-  if ( THC_s[ id ] < mTHC ) mTHC = THC_s[ id ];
+//  if ( THE_s[ id ] < mTHE ) mTHE = THE_s[ id ];
+//  if ( THV_s[ id ] < mTHV ) mTHV = THV_s[ id ];
+//  if ( THC_s[ id ] < mTHC ) mTHC = THC_s[ id ];
+  if ( aTHE < mTHE ) mTHE = aTHE;
+  if ( aTHV < mTHV ) mTHV = aTHV;
+  if ( aTHV < mTHC ) mTHC = aTHC;
 
   #if ( __AMB_AVERAGED == __YES )
     THA_s[ id ] = sensors.getTempC( THambnt );
-    if ( THA_s[ id ] < mTHA ) mTHA = THA_s[ id ];
-    if ( THA_s[ id ] > MTHA ) MTHA = THA_s[ id ];
   #else
     if ( time_amb == __RESET )
       time_amb = millis();
@@ -1464,7 +1509,7 @@ void tempRead( void ) {
     }
     if ( aTHA < mTHA ) mTHA = aTHA;
     if ( aTHA > MTHA ) MTHA = aTHA;
-  # endif
+  #endif
 
   for( int a = 0; a < TH_AVERAGE ; a++ ) {
     aTHE += THE_s[a];
@@ -1476,13 +1521,15 @@ void tempRead( void ) {
   }
   #if ( __AMB_AVERAGED == __YES )
     aTHA /= (float)TH_AVERAGE;
+    if ( aTHA < mTHA ) mTHA = aTHA;
+    if ( aTHA > MTHA ) MTHA = aTHA;
   #endif
   aTHE /= (float)TH_AVERAGE;
   aTHV /= (float)TH_AVERAGE;
   aTHC /= (float)TH_AVERAGE;
 
   //  --------------------------------------- Drv
-  if ( AutoInit == __ON ) {
+//  if ( AutoInit == __ON ) {
     THEDrv_s[ iddrv ] = aTHE - oTHE;
     for( int a = 0; a < DRV_AVERAGE ; a++ ) {
       aTHEDrv += THEDrv_s[a];
@@ -1512,10 +1559,10 @@ void tempRead( void ) {
     oTHC = aTHC;
     oTHDrv = aTHDrv;
 
-  }
-  else {
-    iddrv = 0;
-  }
+//  }
+//  else {
+//    iddrv = 0;
+//  }
 
   //  ---------------------------------------  Indexes: increments and limits
   if ( ++id >= TH_AVERAGE )
@@ -1561,7 +1608,14 @@ void  Controller( void ) {
   static byte first = __ON;
   if ( cycles < 15 ) {
     AutoInit = __OFF;
-  }
+    MTHA = 0.0;
+    MTHE = 0.0;
+    MTHV = 0.0;
+    MTHC = 0.0;
+    mTHA = 100.0;
+    mTHE = 100.0;
+    mTHV = 100.0;
+    mTHC = 100.0;  }
   else {
     AutoInit = __ON;
   }
@@ -1669,6 +1723,17 @@ void commandProcess( void ) {
       rstc_start_software_reset(RSTC);
       break;
     }
+    case 'r': {
+      MTHA = 0.0;
+      MTHE = 0.0;
+      MTHV = 0.0;
+      MTHC = 0.0;
+      mTHA = 100.0;
+      mTHE = 100.0;
+      mTHV = 100.0;
+      mTHC = 100.0;
+      break;
+    }
     case '.': {
       clearScreen();
       break;
@@ -1715,13 +1780,14 @@ void commandProcess( void ) {
       break;
     }
     case 'F': {
-        Force = 1;
+      Force = 1;
       SForce = 0;
       break;
     }
     case 'V':
     case 'v': {
-      if ( inByte == 'V' ) VEnable = __ENABLE;
+      if ( inByte == 'V' ) 
+        VEnable = __ENABLE;
       if ( inByte == 'v' ) {
         Relay_manager( __VIDEO , __OFF );
         VEnable = __DISABLE;
@@ -1730,7 +1796,8 @@ void commandProcess( void ) {
     }
     case 'M':
     case 'm': {
-      if ( inByte == 'M' ) REnable = __ENABLE;
+      if ( inByte == 'M' ) 
+        REnable = __ENABLE;
       if ( inByte == 'm' ) {
         Relay_manager( __REAR , __OFF );
         REnable = __DISABLE;
@@ -1753,6 +1820,56 @@ void commandProcess( void ) {
         Relay_manager( __NOT_USED , __OFF );
         NEnable = __DISABLE;
       }
+      break;
+    }
+    default: {
+      inByte = 0;
+    }
+  }
+}
+
+
+void commandProcessBF( void ) {
+  switch( inByte ) {
+    case 'R': {
+      delay(2000);
+      rstc_start_software_reset(RSTC);
+      break;
+    }
+    case 'f': {
+      Relay_manager( __VIDEO , __OFF );
+      Relay_manager( __REAR , __OFF );
+      Relay_manager( __FRONT , __OFF );
+      break;
+    }
+    case 'F': {
+      Relay_manager( __VIDEO , __ON );
+      Relay_manager( __REAR , __ON );
+      Relay_manager( __FRONT , __ON );
+      break;
+    }
+    case '1': {
+      Relay_manager( __VIDEO , __ON );
+      break;
+    }
+    case '!': {
+      Relay_manager( __VIDEO , __OFF );
+      break;
+    }
+    case '2': {
+      Relay_manager( __REAR , __ON );
+      break;
+    }
+    case '"': {
+      Relay_manager( __REAR , __OFF );
+      break;
+    }
+    case '3': {
+      Relay_manager( __FRONT , __ON );
+      break;
+    }
+    case '£': {
+      Relay_manager( __FRONT , __OFF );
       break;
     }
     default: {
@@ -1854,7 +1971,15 @@ void ledController( void ) {
   
   if ( gsame > ( __SAME_LIMIT * 0.2 ) )
     _L_CNTR_INIT;
-
+    
+  if ( ! __FAN_CONTROL ) {
+    _L_ON_ON_HT;
+    _L_FV_OFF;
+    _L_FF_OFF;
+    _L_FT_OFF;
+  }
+  
+  
   _L_UPDATE;
 }
 
@@ -1891,6 +2016,16 @@ void setup(void) {
     Serial.print  ("Proxima Fan contr [PFC v");
     Serial.print( RFC_VERSION );
     Serial.print("]");
+    Serial.println();
+    Serial.println();
+    Serial.print  ("Fan controller: ");
+    if ( __FAN_CONTROL ) {
+      __SERCOLOR("Enabled", __BRIGHT_GREEN );
+    }
+    else {
+      __SERCOLOR("Disabled", __BRIGHT_RED );
+      Serial.print( " - Monitoring only!");
+    }
     Serial.println();
   }
   else
